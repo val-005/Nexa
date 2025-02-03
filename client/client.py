@@ -1,4 +1,10 @@
 import socket
+import threading
+
+def receive_message(client_socket: socket.socket) -> None:
+    while True:
+        reponse = client_socket.recv(1024).decode()
+        print(f"{reponse.split(';')[0]}: {reponse.split(';')[1]}")
 
 def main():
     host = "127.0.0.1"  # Adresse du serveur
@@ -18,22 +24,17 @@ def main():
     print("Connecté au serveur !")
     print("===========================================\n")
 
+    t = threading.Thread(target=receive_message, args=(client_socket,))
+    t.start()
+
     while True:
-        print("\n------------ Menu ------------")
-        print("Saisissez 'quit' pour quitter")
-        msg = input("Entrez votre message : ")
+        msg = input("")
         if msg.lower() == 'quit':
             break
 
         recipient = input("Destinataire du message : ")
         msg_formaté = f"{pseudo};{msg};{recipient}"
         client_socket.send(msg_formaté.encode())
-        print("\nEnvoi du message...")
-
-        reponse = client_socket.recv(1024).decode()
-        print("---------------------------------")
-        print(f"{reponse}")
-        print("---------------------------------")
     
     client_socket.close()
 

@@ -3,73 +3,42 @@ import threading
 
 
 class Node:
-    def __init__(self, host, port):
-        """Création de l'objet Node avec l'hôte, le port et les pairs."""
+    def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.peers = []         # Connexions sortantes initiées par ce nœud
-        self.connections = {}   # Connexions entrantes avec leurs adresses
-        self.data = ""
 
-    def start_server(self):
-        """Démarrage du serveur."""
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((self.host, self.port))
-        server.listen(5)
-        print(f"Écoute sur {self.host}:{self.port}")
+    def handle_client(self, client_socket: socket.socket, clients_list: list) -> None:
+        while True:
+            message = client_socket.recv(1024).decode()
+            print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
+            for client in clients_list:
+                if client != client_socket:
+                    client.send(message.encode())
+            if 'quit' in message.lower():
+                client_socket.close()
+                break
+
+    def start(self) -> None:
+        host = '0.0.0.0'
+        port = 8000
+        clients_list = []
+
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((host, port))
+        server_socket.listen()
+        print(f"Écoute sur {host}:{port}")
 
         while True:
-            conn, addr = server.accept()
-            print(f"Connexion acceptée de {addr}")
-
-            # Vérification pour éviter les connexions en double
-            if addr not in self.connections and not self.is_peer(conn, addr):
-                self.connections[addr] = conn
-                threading.Thread(target=self.handle_client, args=(conn, addr)).start()
-
-    def handle_client(self, conn, addr):
-        '''Gestion des messages entrants et réponse.'''
-        try:
-            while True:
-                data = conn.recv(1024)
-                if not data:  # Si message vide, sortir de la boucle
-                    break
-                self.data = data.decode("utf-8")
-                print(self.data)
-        except Exception as e:
-            print(f"Erreur avec {addr}: {e}")
-        finally:
-            conn.close()
-            if addr in self.connections:
-                del self.connections[addr]
-            print(f"Connexion fermée avec {addr}")
-
-    def connect_node(self, ip, port):
-        """Connexion à un autre nœud."""
-        peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if not self.is_peer(ip, port):
-            peer.connect((ip, port))
-            self.peers.append(peer)
-            peer.send(f"node!{self.host}!{self.port}".encode())
-
-    def is_peer(self, ip_or_conn, port=None):
-        """
-        Vérifie si le couple (hôte, port) est déjà un pair.
-        Peut accepter soit une connexion et son adresse (tuple) soit directement (ip, port).
-        """
-        if port is None:
-            # Cas où ip_or_conn est une connexion et port est en fait une adresse tuple
-            addr = ip_or_conn.getpeername()
-        else:
-            addr = (ip_or_conn, port)
-
-        for peer in self.peers:
-            if peer.getpeername() == addr:
-                return True
-        return False
+            client_socket, _ = server_socket.accept()
+            clients_list.append(client_socket)
+            thread = threading.Thread(
+                target=self.handle_client,
+                args=(client_socket, clients_list)
+            )
+            thread.daemon = True
+            thread.start()
 
 
 if __name__ == "__main__":
-    node = Node("0.0.0.0", 8000)
-    node.start_server()
+    node = Node('0.0.0.0', 8000)
+    node.start()
