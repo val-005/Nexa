@@ -8,7 +8,7 @@ def receive_message(client_socket: socket.socket) -> None:
 
 def main():
     host = "127.0.0.1"  # Adresse du serveur
-    port = 8000         # Port du serveur
+    port = 8001         # Port du serveur
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -32,8 +32,7 @@ def main():
         if msg.lower() == 'quit':
             break
 
-        recipient = input("Destinataire du message : ")
-        msg_formaté = f"{pseudo};{msg};{recipient}"
+        msg_formaté = f"{pseudo};{msg}"
         client_socket.send(msg_formaté.encode())
     
     client_socket.close()

@@ -12,15 +12,15 @@ class Node:
             message = client_socket.recv(1024).decode()
             print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
             for client in clients_list:
-                if client != client_socket:
+                if client != client_socket and "register;" not in message:
                     client.send(message.encode())
             if 'quit' in message.lower():
                 client_socket.close()
                 break
 
     def start(self) -> None:
-        host = '0.0.0.0'
-        port = 8000
+        host = self.host
+        port = self.port
         clients_list = []
 
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -40,5 +40,5 @@ class Node:
 
 
 if __name__ == "__main__":
-    node = Node('0.0.0.0', 8000)
+    node = Node('0.0.0.0', 8001)
     node.start()
