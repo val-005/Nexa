@@ -1,4 +1,4 @@
-const  express = require('express');
+const express = require('express');
 const app = express();
 app.use(express.json());
 
@@ -11,6 +11,45 @@ db.serialize(() => {
     db.run("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
     db.run("CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
 });
+
+// Partie Fonctions
+const checkNodes = async () => {
+    db.all("SELECT node FROM nodes", async (err, table) => {
+        if (err) {
+            console.log(err);
+        }
+    const upNodes = [];
+    for (const col of table) {
+        try {
+            // Si le noeud répond correctement à la requete get, alors on l'ajoute a la liste des noeuds up
+            const response = await axios.get(`http://${col.node}/status`);
+            if (response.status === 200) {
+                upNodes.push(col.node);
+            }
+        } catch (error) {
+        }
+    }
+
+
+    db.run("DELETE FROM upnodes", (err) => {
+        if (err) {
+            console.log(err);
+        } else {
+            if (upNodes.length > 0) {
+                const placeholders = upNodes.map(() => "(?)").join(",");
+                db.run(`INSERT INTO upnodes (node) VALUES ${placeholders}`, upNodes, (err) => {
+                    if (err) {
+                        console.log(err);
+                    }
+                });
+            }
+        }
+    });
+    console.log("Up Nodes:", upNodes);
+});
+}
+checkNodes();
+setInterval(checkNodes, 5 * 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -63,50 +102,20 @@ app.post("/registerNode", (req, res) => {
             }
         });
     } else {
-        res.status(400).send({ error: "Invalid node. It must be a non-empty string." });
+        res.status(400).send({ error: "Invalid node. It must be a non-empty string." });l
+        
     }
 });
 
 
 // Récupérer la liste des noeuds up, à améliorer, risque de charge trop élevée sur le serveur si beaucoup de requetes
-app.get("/checkNodes", async (req, res) => {
-    db.all("SELECT node FROM nodes", async (err, table) => {
+app.get("/upNodes", async (req, res) => {
+    db.all("SELECT node FROM upnodes", (err, table) => {
         if (err) {
             res.status(500).send({ error: "Failed to retrieve nodes" });
         } else {
-            const upNodes = [];
-            for (const col of table) {
-                try {
-                    // Si le noeud répond correctement à la requete get, alors on l'ajoute a la liste des noeuds up
-                    const response = await axios.get(`http://${col.node}/status`);
-                    if (response.status === 200) {
-                        upNodes.push(col.node);
-                    }
-                } catch (error) {
-                }
-            }
-
-        
-            db.run("DELETE FROM upnodes", (err) => {
-                if (err) {
-                    res.status(500).send({ error: "Failed to clear upnodes table" });
-                } else {
-                    if (upNodes.length > 0) {
-                        const placeholders = upNodes.map(() => "(?)").join(",");
-                        db.run(`INSERT INTO upnodes (node) VALUES ${placeholders}`, upNodes, (err) => {
-                            if (err) {
-                                res.status(500).send({ error: "Error while updating the table" });
-                                console.log(err);
-                            } else {
-
-                                res.send( upNodes );
-                            }
-                        });
-                    } else {
-                        res.send([]);
-                    }
-                }
-            });
+            const nodes = table.map(col => col.node);
+            res.send(nodes);
         }
     });
-});
+})
