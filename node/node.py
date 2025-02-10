@@ -28,17 +28,24 @@ class Node:
                 break
     
     def connect_node(self, ip, port, etat) -> None:
-        deSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        deSocket.settimeout(5)  # Ajout d'un timeout de 5 secondes
-        try:
-            if etat == 0:
-                print(f"tentative de connexion à {ip}:{port}")
-                deSocket.connect((ip, port))
-        except socket.error as e:
-            print(f"Erreur de connexion au serveur: {e}")
-            return
-        print(f"Connecté à {ip}")
-        deSocket.send(f"register;node;{self.host};{self.port}".encode())
+        with threading.Lock():
+            deSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            deSocket.settimeout(5)  # Ajout d'un timeout de 5 secondes
+            try:
+                if etat == 0:
+                    print(f"tentative de connexion à {ip}:{port}")
+                    deSocket.connect((ip, port))
+            except socket.error as e:
+                print(f"Erreur de connexion au serveur: {e}")
+                deSocket.close()
+                return
+            print(f"Connecté à {ip}")
+            
+            try:
+                deSocket.send(f"register;node;{self.host};{self.port}".encode())
+            except socket.error as e:
+                print(f"Erreur lors de l'envoi du message: {e}")
+
         self.nodeSocket_list.append(deSocket)
         for i in self.nodeIpPort_list:
             if i[0] == ip and i[1] == port:
@@ -67,8 +74,10 @@ class Node:
     def connect_nodesList(self):
         while True:
             for node in self.nodeIpPort_list:
-                t = threading.Thread(target=self.connect_node, args=(node[0], node[1], node[2])) 
-                t.start()
+                if node[2] == 0:
+                    t = threading.Thread(target=self.connect_node, args=(node[0], node[1], node[2])) 
+                    t.start()
+                    t.join()
             time.sleep(2)
 
 if __name__ == "__main__":
@@ -76,6 +85,6 @@ if __name__ == "__main__":
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    node.nodeIpPort_list.append(["172.21.5.16", 9102, 0])
+    node.nodeIpPort_list.append(["192.168.194.126", 9102, 0])
     t2 = threading.Thread(target=node.connect_nodesList)
     t2.start()
