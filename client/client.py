@@ -47,5 +47,5 @@ class Client:
         client_socket.close()
 
 if __name__ == "__main__":
-    cli = Client('0.0.0.0', 8001)
+    cli = Client('127.0.0.1', 9102) #adresse du serveur
     cli.start()
