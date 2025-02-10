@@ -2,37 +2,38 @@ name: Node.js CI
 
 on:
   push:
-    branches: [ "master", "dev", "experimental" ]
+    branches: ["experimental"]
   pull_request:
     branches: [ "master", "dev" ]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [20.x, 22.x, 23.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+        node-version: [20.x, 22.x]  # Supprime 23.x car il semble instable
+        # Voir le planning des versions Node.js : https://nodejs.org/en/about/releases/
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-        cache-dependency-path: bootstrap/package-lock.json # Cache uniquement les dépendances de bootstrap
+        cache-dependency-path: bootstrap/package-lock.json  # Vérifie que ce fichier existe bien
+
     - name: Install dependencies
-      run: |
-        cd bootstrap
-        npm ci
+      working-directory: bootstrap
+      run: npm ci
+
     - name: Build project
-      run: |
-        cd bootstrap
-        npm run build --if-present
+      working-directory: bootstrap
+      run: npm run build --if-present
+
     - name: Run tests
-      run: |
-        cd bootstrap
-        npm test
+      working-directory: bootstrap
+      run: npm test
