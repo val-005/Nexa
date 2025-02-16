@@ -2,14 +2,23 @@ const request = require("supertest");
 const { app, checkNodesInterval } = require("../bootstrap.js");
 const sqlite3 = require("sqlite3").verbose();
 
+beforeAll((done) => {
+    const db = new sqlite3.Database('db.sqlite');
+    db.serialize(() => {
+        db.run("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
+        db.run("CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
+        done();
+    });
+});
+
 beforeEach((done) => {
     const db = new sqlite3.Database('db.sqlite');
     db.serialize(() => {
         db.run("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
-        db.run("CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT)");
+        db.run("CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");  // Correction : assure le UNIQUE ici aussi
         db.run("DELETE FROM nodes");
         db.run("DELETE FROM upnodes");
-        done();
+        db.run("INSERT INTO nodes (node) VALUES (?)", ["127.0.0.1:5000"], done);  // Ajoute un nœud par défaut pour chaque test
     });
 });
 
@@ -31,24 +40,18 @@ describe("🚀 API Tests", () => {
     });
 
     test("✅ GET /nodes doit retourner les nœuds enregistrés", async () => {
-        const db = new sqlite3.Database('db.sqlite');
-        db.run("INSERT INTO nodes (node) VALUES (?)", ["127.0.0.1:5000"], async () => {
-            const res = await request(app).get("/nodes");
-            expect(res.statusCode).toBe(200);
-            expect(res.body).toContain("127.0.0.1:5000");
-        });
+        const res = await request(app).get("/nodes");
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toContain("127.0.0.1:5000");
     });
 
     test("❌ POST /registerNode ne doit pas enregistrer un nœud dupliqué", async () => {
-        const db = new sqlite3.Database('db.sqlite');
-        db.run("INSERT INTO nodes (node) VALUES (?)", ["127.0.0.1:5000"], async () => {
-            const res = await request(app)
-                .post("/registerNode")
-                .send({ node: "127.0.0.1:5000" });
+        const res = await request(app)
+            .post("/registerNode")
+            .send({ node: "127.0.0.1:5000" });
 
-            expect(res.statusCode).toBe(400);
-            expect(res.body).toHaveProperty("error", "Node is already registered");
-        });
+        expect(res.statusCode).toBe(400);
+        expect(res.body).toHaveProperty("error", "Node is already registered");
     });
 
     test("❌ POST /registerNode ne doit pas enregistrer un nœud invalide", async () => {
