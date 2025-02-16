@@ -4,7 +4,7 @@ on:
   push:
     branches: ["experimental"]
   pull_request:
-    branches: [ "master", "dev" ]
+    branches: ["master", "dev"]
 
 jobs:
   build:
@@ -12,28 +12,29 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20.x, 22.x]  # Supprime 23.x car il semble instable
-        # Voir le planning des versions Node.js : https://nodejs.org/en/about/releases/
+        node-version: [20.x, 22.x] 
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: bootstrap/package-lock.json  # Vérifie que ce fichier existe bien
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: bootstrap/package-lock.json 
 
-    - name: Install dependencies
-      working-directory: bootstrap
-      run: npm ci
+      - name: Install dependencies
+        working-directory: bootstrap
+        run: npm ci
 
-    - name: Build project
-      working-directory: bootstrap
-      run: npm run build --if-present
+      - name: Setup SQLite Database
+        working-directory: bootstrap
+        run: |
+          sqlite3 db.sqlite "CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE);"
+          sqlite3 db.sqlite "CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT);"
 
-    - name: Run tests
-      working-directory: bootstrap
-      run: npm test
+      - name: Run tests
+        working-directory: bootstrap
+        run: npm test

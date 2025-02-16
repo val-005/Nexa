@@ -5,6 +5,8 @@ const sqlite3 = require("sqlite3").verbose();
 beforeEach((done) => {
     const db = new sqlite3.Database('db.sqlite');
     db.serialize(() => {
+        db.run("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
+        db.run("CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT)");
         db.run("DELETE FROM nodes");
         db.run("DELETE FROM upnodes");
         done();
