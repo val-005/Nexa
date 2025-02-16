@@ -1,10 +1,12 @@
-const express = require('express');
+const express = require("express");
 const app = express();
 app.use(express.json());
 
-const axios = require('axios');
+const supertest = require("supertest");  // Pour Jest
+const axios = require("axios");
+const sqlite3 = require("sqlite3").verbose();
 
-const sqlite3 = require('sqlite3').verbose();
+
 // A changer, mettre le path de l'environnement docker
 const db = new sqlite3.Database('db.sqlite');
 db.serialize(() => {
@@ -49,12 +51,8 @@ const checkNodes = async () => {
 });
 }
 checkNodes();
-setInterval(checkNodes, 5 * 60 * 1000);
+const checkNodesInterval = setInterval(checkNodes, 5 * 60 * 1000);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log("Server Listening on PORT:", PORT);
-  });
 
 app.get("/status", (req, res) => {
     const status = {
@@ -78,37 +76,37 @@ app.get("/nodes", (req, res) => {
     });
 });
 
-// Enregistrer un noeud, A ajouter une verif pour voir si l'addresse est valide
 app.post("/registerNode", (req, res) => {
     let { node } = req.body;
-    // On enlève le http:// devant et le / à la fin si il y en a, pour que toutes les entrées dans la db soient sous la meme forme
-    node = node.replace(/^http:\/\//, '');
-    node = node.replace(/\/$/, '');
+    node = node.replace(/^http:\/\//, '').replace(/\/$/, '');
 
-    if (typeof node === "string" && node.trim() !== "") {
-        db.get(`SELECT node FROM nodes WHERE node = ?`, [node], (err, col) => {
-            if (err) {
-                res.status(500).send({ error: "Database error" });
-            } else if (col) {
-                res.status(400).send({ error: "Node is already registered" });
-            } else {
-                db.run(`INSERT INTO nodes (node) VALUES (?)`, [node], (err) => {
-                    if (err) {
-                        res.status(500).send({ error: "Failed to register node" });
-                    } else {
-                        res.send({ status: "success" });
-                    }
-                });
-            }
-        });
-    } else {
-        res.status(400).send({ error: "Invalid node. It must be a non-empty string." });l
-        
+    const regex = /^[a-zA-Z0-9.-]+:[0-9]+$/;  // Format host:port
+    if (!regex.test(node)) {
+        return res.status(400).send({ error: "Invalid node format. Use 'host:port'." });
     }
+
+    db.get(`SELECT node FROM nodes WHERE node = ?`, [node], (err, col) => {
+        if (err) {
+            return res.status(500).send({ error: "Database error" });
+        }
+        if (col) {
+            return res.status(400).send({ error: "Node is already registered" });
+        }
+
+        db.run(`INSERT INTO nodes (node) VALUES (?)`, [node], (err) => {
+            if (err) {
+                if (err.code === 'SQLITE_CONSTRAINT') {
+                    return res.status(400).send({ error: "Node is already registered" });
+                }
+                return res.status(500).send({ error: "Failed to register node" });
+            }
+            res.send({ status: "success" });
+        });
+    });
 });
 
 
-// Récupérer la liste des noeuds up, à améliorer, risque de charge trop élevée sur le serveur si beaucoup de requetes
+// Récupérer la liste des noeuds up
 app.get("/upNodes", async (req, res) => {
     db.all("SELECT node FROM upnodes", (err, table) => {
         if (err) {
@@ -119,3 +117,10 @@ app.get("/upNodes", async (req, res) => {
         }
     });
 })
+
+if (require.main === module) {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => console.log("Server Listening on PORT:", PORT));
+}
+
+module.exports = { app, checkNodesInterval };
