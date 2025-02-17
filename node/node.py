@@ -120,6 +120,6 @@ if __name__ == "__main__":
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    node.nodeIpPort_list.append(["10.49.229.126", 9102, 0])
+    node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
