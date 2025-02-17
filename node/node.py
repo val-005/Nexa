@@ -26,7 +26,14 @@ class Node:
             
             elif message != "register;" and message.split(";")[3] == "1":
                 for client in self.client_list:
-                    client.send(message.encode())
+                    try:
+                        client.send(message.encode())
+                    except BrokenPipeError:
+                        print(f"Le client {client.getpeername()} s'est déconnecté.")
+                        self.client_list.remove(client)
+                    except ConnectionResetError:
+                        print(f"Connexion réinitialisée par {client.getpeername()}.")
+                        self.client_list.remove(client)
 
 
             if 'quit' in message.lower():
@@ -121,5 +128,6 @@ if __name__ == "__main__":
     t.start()
     time.sleep(1)
     node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])
+    node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
