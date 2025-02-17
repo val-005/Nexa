@@ -14,7 +14,9 @@ class Node:
     def handleClient(self, client_socket: socket.socket) -> None:
         while True:
             message = client_socket.recv(1024).decode()
-            message += ";0"
+
+            if not message.strip().endswith(";0") and not message.strip().endswith(";1"):
+                message += ";0"
 
             print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
 

@@ -1,11 +1,17 @@
 import socket
 import threading
 
+from ecies import encrypt, decrypt
+from ecies.utils import generate_eth_key
+
 class Client:
 
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
+        self.keys = generate_eth_key()
+        self.privKey = self.keys.to_hex()
+        self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 
     def receive_message(self, client_socket: socket.socket) -> None:
         #gère la réception des messages
@@ -15,8 +21,8 @@ class Client:
 
     def start(self) -> None:
         #démarre le client
-        host = self.host  # Adresse du serveur
-        port = self.port         # Port du serveur
+        host = self.host        # Adresse du serveur
+        port = self.port        # Port du serveur
 
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -31,6 +37,7 @@ class Client:
         client_socket.send(registration_msg.encode())
         print("Connecté au serveur !")
         print("===========================================\n")
+        print(f"clé publique : {self.pubKey}")
 
         #crée un processus pour recevoir les messages
         threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))
@@ -41,7 +48,11 @@ class Client:
             if msg.lower() == 'quit':
                 break
 
-            msg_formaté = f"{pseudo};{msg}"
+            to = input("To: ")
+
+            msgEncrypt = encrypt(to, msg.encode())
+
+            msg_formaté = f"{pseudo};{msgEncrypt};{to}"
             client_socket.send(msg_formaté.encode())
         
         client_socket.close()
