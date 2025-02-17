@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class Node:
     def __init__(self, host: str, port: int):
@@ -91,7 +92,30 @@ class Node:
             thread.daemon = True
             thread.start()
 
+class StatusHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/status':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_error(404)
+
+    # Désactiver les logs pour éviter la sortie standard inutile
+    def log_message(self, format, *args):
+        return
+
+def run_http_server():
+    httpd = HTTPServer(('0.0.0.0', 80), StatusHTTPRequestHandler)
+    print("Serveur HTTP (endpoint /status) démarré sur le port 80")
+    httpd.serve_forever()
+
 if __name__ == "__main__":
+    http_thread = threading.Thread(target=run_http_server)
+    http_thread.daemon = True
+    http_thread.start()
     node = Node('0.0.0.0', 9102)
     t = threading.Thread(target=node.start)
     t.start()

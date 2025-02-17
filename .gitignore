@@ -1,2 +1,3 @@
 node_modules/
 /bootstrap/db.sqlite
+.venv/

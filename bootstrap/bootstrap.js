@@ -7,8 +7,14 @@ const axios = require("axios");
 const sqlite3 = require("sqlite3").verbose();
 
 
-// A changer, mettre le path de l'environnement docker
-const db = new sqlite3.Database('db.sqlite');
+const path = require("path");
+const dbPath = process.env.DB_PATH || "db.sqlite"; 
+// => si DB_PATH n’est pas défini, fallback sur "db.sqlite"
+
+const fullPath = path.resolve(dbPath); 
+// => résout le chemin absolu pour éviter les surprises
+
+const db = new sqlite3.Database(fullPath);
 db.serialize(() => {
     db.run("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
     db.run("CREATE TABLE IF NOT EXISTS upnodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT UNIQUE)");
@@ -119,7 +125,7 @@ app.get("/upNodes", async (req, res) => {
 })
 
 if (require.main === module) {
-    const PORT = process.env.PORT || 3000;
+    const PORT = process.env.PORT || 80;
     app.listen(PORT, () => console.log("Server Listening on PORT:", PORT));
 }
 
