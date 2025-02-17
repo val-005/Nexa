@@ -123,13 +123,14 @@ const SSL_ENABLED = process.env.SSL_ENABLED === "true";
 const PORT = process.env.PORT || (SSL_ENABLED ? 443 : 80);
 const KEY_PATH = process.env.SSL_KEY_PATH;
 const CRT_PATH = process.env.SSL_CRT_PATH;
-
+const CA_PATH = process.env.SSL_CHAIN_PATH;
 if (require.main === module) {
     if (SSL_ENABLED) {
       const privateKey  = fs.readFileSync(KEY_PATH, 'utf8');
       const certificate = fs.readFileSync(CRT_PATH, 'utf8');
-  
-      const credentials = { key: privateKey, cert: certificate, ca: ca };
+      const ca = CA_PATH ? fs.readFileSync(CA_PATH, 'utf8') : undefined;
+      const credentials = { key: privateKey, cert: certificate };
+      if(ca){ credentials.ca = ca; }
       https.createServer(credentials, app).listen(PORT, () => {
         console.log("HTTPS Server listening on PORT:", PORT);
       });
@@ -138,6 +139,5 @@ if (require.main === module) {
         console.log("HTTP Server Listening on PORT:", PORT);
       });
     }
-  }
- 
+}
 module.exports = { app, checkNodesInterval };
