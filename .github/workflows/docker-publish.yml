@@ -12,6 +12,7 @@ on:
        - '.github/**'
        - '.gitignore'
    branches: [ "master", "dev" ]
+   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
