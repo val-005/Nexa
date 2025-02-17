@@ -10,27 +10,32 @@ class Node:
         self.nodeSocket_list = []
         self.nodeIpPort_list = []
 
-    def handle_client(self, client_socket: socket.socket, clients_list: list) -> None:
+    def handleClient(self, client_socket: socket.socket) -> None:
         while True:
             message = client_socket.recv(1024).decode()
-
-            if message.split(';')[0] == 'register' and message.split(';')[1] == 'client':
-                self.client_list.append(client_socket)
+            message += ";0"
 
             print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
 
-            for client in clients_list:
-                if client != client_socket and "register;" not in message:
+            if "register;client;" in message:
+                self.client_list.append(client_socket)
+
+            if message != "register;" and message.split(";")[2] == "0":
+                self.sendMessageNode(message.split(';')[0] + ";" + message.split(';')[1] + ";" + str(int(message.split(';')[2]) + 1))
+            
+            elif message != "register;" and message.split(";")[2] == "1":
+                for client in self.client_list:
                     client.send(message.encode())
+
 
             if 'quit' in message.lower():
                 client_socket.close()
                 break
     
-    def connect_node(self, ip, port, etat) -> None:
+    def connectNode(self, ip, port, etat) -> None:
         with threading.Lock():
             deSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            deSocket.settimeout(5)  # Ajout d'un timeout de 5 secondes
+            deSocket.settimeout(5)
             try:
                 if etat == 0:
                     print(f"tentative de connexion à {ip}:{port}")
@@ -50,8 +55,23 @@ class Node:
         for i in self.nodeIpPort_list:
             if i[0] == ip and i[1] == port:
                 i[2] = 1
-        
-        
+
+    def connectNodesList(self):
+        while True:
+            for node in self.nodeIpPort_list:
+                if node[2] == 0:
+                    t = threading.Thread(target=self.connectNode, args=(node[0], node[1], node[2])) 
+                    t.start()
+                    t.join()
+            time.sleep(2)
+
+    def sendMessageNode(self, message: str) -> None:
+        for node in self.nodeSocket_list:
+            try:
+                node.send(message.encode())
+            except socket.error as e:
+                print(f"Erreur lors de l'envoi du message: {e}")
+
 
     def start(self) -> None:
         host = self.host
@@ -65,20 +85,11 @@ class Node:
         while True:
             client_socket, _ = server_socket.accept()
             thread = threading.Thread(
-                target=self.handle_client,
-                args=(client_socket, self.client_list)
+                target=self.handleClient,
+                args=(client_socket,)
             )
             thread.daemon = True
             thread.start()
-
-    def connect_nodesList(self):
-        while True:
-            for node in self.nodeIpPort_list:
-                if node[2] == 0:
-                    t = threading.Thread(target=self.connect_node, args=(node[0], node[1], node[2])) 
-                    t.start()
-                    t.join()
-            time.sleep(2)
 
 if __name__ == "__main__":
     node = Node('0.0.0.0', 9102)
@@ -86,5 +97,5 @@ if __name__ == "__main__":
     t.start()
     time.sleep(1)
     node.nodeIpPort_list.append(["192.168.194.126", 9102, 0])
-    t2 = threading.Thread(target=node.connect_nodesList)
+    t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
