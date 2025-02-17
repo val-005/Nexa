@@ -1,5 +1,4 @@
-import socket
-import threading
+import socket, threading
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key

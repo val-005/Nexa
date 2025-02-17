@@ -1,6 +1,4 @@
-import socket
-import threading
-import time
+import socket, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class Node:
@@ -23,10 +21,10 @@ class Node:
             if "register;client;" in message:
                 self.client_list.append(client_socket)
 
-            if message != "register;" and message.split(";")[2] == "0":
-                self.sendMessageNode(message.split(';')[0] + ";" + message.split(';')[1] + ";" + str(int(message.split(';')[2]) + 1))
+            if message != "register;" and message.split(";")[3] == "0":
+                self.sendMessageNode(';'.join(message.split(';')[:3] + [str(int(message.split(';')[3]) + 1)]))
             
-            elif message != "register;" and message.split(";")[2] == "1":
+            elif message != "register;" and message.split(";")[3] == "1":
                 for client in self.client_list:
                     client.send(message.encode())
 
@@ -115,13 +113,13 @@ def run_http_server():
     httpd.serve_forever()
 
 if __name__ == "__main__":
-    http_thread = threading.Thread(target=run_http_server)
-    http_thread.daemon = True
-    http_thread.start()
+    #http_thread = threading.Thread(target=run_http_server)
+    #http_thread.daemon = True
+    #http_thread.start()
     node = Node('0.0.0.0', 9102)
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    node.nodeIpPort_list.append(["192.168.194.126", 9102, 0])
+    node.nodeIpPort_list.append(["10.49.229.126", 9102, 0])
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
