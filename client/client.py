@@ -16,7 +16,8 @@ class Client:
         #gère la réception des messages
         while True:
             reponse = client_socket.recv(1024).decode()
-            print(f"{reponse.split(';')[0]}: {reponse.split(';')[1]}")
+            if "register;" not in reponse:
+                print(f"{reponse.split(';')[0]};{decrypt(self.privKey, reponse.split(';')[1])}")
 
     def start(self) -> None:
         #démarre le client
@@ -34,9 +35,8 @@ class Client:
         pseudo = input("Entrez votre pseudo : ")
         registration_msg = f"register;client;{pseudo}"
         client_socket.send(registration_msg.encode())
-        print("Connecté au serveur !")
-        print("===========================================\n")
-        print(f"clé publique : {self.pubKey}")
+        print("\n===================== Connecté au serveur ======================\n")
+        print(f"ta clé publique : {self.pubKey}")
 
         #crée un processus pour recevoir les messages
         threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))
