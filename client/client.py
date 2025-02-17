@@ -18,10 +18,13 @@ class Client:
         while True:
             reponse = client_socket.recv(1024).decode()
             if "register;" not in reponse:
-                msg = decrypt(self.privKey, bytes.fromhex(reponse.split(';')[1]))
-                if str(msg).startswith("b'") and str(msg).endswith("'"):
-                    msg = ast.literal_eval(str(msg)).decode()
-                print(f"{reponse.split(';')[0]}: {msg}")
+                try:
+                    msg = decrypt(self.privKey, bytes.fromhex(reponse.split(';')[1]))
+                    if str(msg).startswith("b'") and str(msg).endswith("'"):
+                        msg = ast.literal_eval(str(msg)).decode()
+                        print(f"{reponse.split(';')[0]}: {msg}")
+                except Exception as e:
+                    print(f"Erreur lors du déchiffrement: {e}")
 
     def start(self) -> None:
         #démarre le client
@@ -34,7 +37,6 @@ class Client:
             client_socket.connect((host, port))
         except socket.error as e:
             print(f"Erreur de connexion au serveur: {e}")
-            return
 
         pseudo = input("Entrez votre pseudo : ")
         registration_msg = f"register;client;{pseudo}"
@@ -52,8 +54,12 @@ class Client:
                 break
 
             to = input("To: ")
-
-            msgEncrypt = encrypt(to, msg.encode())
+            
+            try:
+                msgEncrypt = encrypt(to, msg.encode())
+            except Exception as e:
+                print(f"Erreur lors du chiffrement: {e}")
+                continue
 
             msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to}"
             client_socket.send(msg_formaté.encode())

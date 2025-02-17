@@ -81,7 +81,7 @@ class Node:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((host, port))
         server_socket.listen()
-        print(f"Écoute sur {host}:{port}")
+        print(f"Écoute sur {host} : {port}")
 
         while True:
             client_socket, _ = server_socket.accept()
@@ -108,14 +108,14 @@ class StatusHTTPRequestHandler(BaseHTTPRequestHandler):
         return
 
 def run_http_server():
-    httpd = HTTPServer(('0.0.0.0', 80), StatusHTTPRequestHandler)
-    print("Serveur HTTP (endpoint /status) démarré sur le port 80")
+    httpd = HTTPServer(('0.0.0.0', 8080), StatusHTTPRequestHandler)
+    print("Serveur HTTP (endpoint /status) démarré sur le port 8080")
     httpd.serve_forever()
 
 if __name__ == "__main__":
-    #http_thread = threading.Thread(target=run_http_server)
-    #http_thread.daemon = True
-    #http_thread.start()
+    http_thread = threading.Thread(target=run_http_server)
+    http_thread.daemon = True
+    http_thread.start()
     node = Node('0.0.0.0', 9102)
     t = threading.Thread(target=node.start)
     t.start()
