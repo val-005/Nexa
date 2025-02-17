@@ -1,4 +1,5 @@
 import socket, threading
+import ast
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -17,7 +18,10 @@ class Client:
         while True:
             reponse = client_socket.recv(1024).decode()
             if "register;" not in reponse:
-                print(f"{reponse.split(';')[0]};{decrypt(self.privKey, reponse.split(';')[1])}")
+                msg = decrypt(self.privKey, bytes.fromhex(reponse.split(';')[1]))
+                if str(msg).startswith("b'") and str(msg).endswith("'"):
+                    msg = ast.literal_eval(str(msg)).decode()
+                print(f"{reponse.split(';')[0]}: {msg}")
 
     def start(self) -> None:
         #démarre le client
@@ -51,7 +55,7 @@ class Client:
 
             msgEncrypt = encrypt(to, msg.encode())
 
-            msg_formaté = f"{pseudo};{msgEncrypt};{to}"
+            msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to}"
             client_socket.send(msg_formaté.encode())
         
         client_socket.close()

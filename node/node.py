@@ -22,7 +22,7 @@ class Node:
                 self.client_list.append(client_socket)
 
             if message != "register;" and message.split(";")[3] == "0":
-                self.sendMessageNode(';'.join(message.split(';')[:3] + [str(int(message.split(';')[3]) + 1)]))
+                self.sendMessageNode(message.split(';')[0] + ";" + message.split(';')[1] + ";" + message.split(';')[2] + ';' + str(int(message.split(';')[3]) + 1))
             
             elif message != "register;" and message.split(";")[3] == "1":
                 for client in self.client_list:
