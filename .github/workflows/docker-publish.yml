@@ -6,11 +6,15 @@ on:
     paths-ignore:
        - '.github/**'
        - '.gitignore'
+       - 'client/**'
+       - 'node/**'
     tags: [ 'v*.*.*' ]
   pull_request:
    paths-ignore:
        - '.github/**'
        - '.gitignore'
+       - 'client/**'
+       - 'node/**'
    branches: [ "master", "dev" ]
 
 env:
