@@ -119,6 +119,10 @@ app.get("/upNodes", async (req, res) => {
   });
 });
 
+app.get("/", (req, res) => {
+  res.redirect("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+});
+
 const SSL_ENABLED = process.env.SSL_ENABLED === "true";
 const PORT = process.env.PORT || (SSL_ENABLED ? 443 : 80);
 const KEY_PATH = process.env.SSL_KEY_PATH;
