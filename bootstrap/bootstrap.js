@@ -52,7 +52,6 @@ const checkNodes = async () => {
         }
       }
     });
-    console.log("Up Nodes:", upNodes);
   });
 };
 checkNodes();
