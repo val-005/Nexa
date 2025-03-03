@@ -121,6 +121,6 @@ class Client:
         client_socket.close()
 
 if __name__ == "__main__":
-    cli = Client('127.0.0.1', 9102)                 # Adresse du noeud
+    cli = Client('217.154.11.237', 9102)                 # Adresse du noeud
     #cli = Client('bootstrap.nexachat.tech', 9102)   # Adresse du bootstrap
     cli.start()

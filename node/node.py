@@ -42,8 +42,9 @@ class Node:
                                 exists = False
                                 for node in self.nodeIpPort_list:
                                     if node[0] == node_ip and node[1] == node_port:
-                                        node[2] = 0  # Marquer comme non-connecté pour établir une connexion bidirectionnelle
+                                        # Ne pas réinitialiser l'état si déjà connecté
                                         exists = True
+                                        break
                                 if not exists:
                                     self.nodeIpPort_list.append([node_ip, node_port, 0])  # État 0 pour que connectNodesList() établisse la connexion
                     
@@ -141,13 +142,29 @@ class Node:
                         self.nodeSocket_list.remove(sock)
                     # Mise à jour de l'état du nœud dans la liste
                     try:
+                        remote_ip = sock.getpeername()[0]
                         for node in self.nodeIpPort_list:
-                            if node[0] == sock.getpeername()[0]:
+                            if node[0] == remote_ip:
                                 node[2] = 0  # Marquer comme déconnecté
                     except:
                         pass
     
+    def isNodeConnected(self, ip, port):
+        """Vérifie si un nœud est déjà connecté"""
+        with self.lock:
+            for sock in self.nodeSocket_list:
+                try:
+                    if sock.getpeername()[0] == ip:
+                        return True
+                except:
+                    continue
+            return False
+
     def connectNode(self, ip, port, etat) -> None:
+        # Vérifiez d'abord si nous sommes déjà connectés à ce nœud
+        if self.isNodeConnected(ip, port):
+            return
+            
         with self.lock:  # Utilisation du verrou partagé
             deSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             deSocket.settimeout(5)
@@ -164,6 +181,7 @@ class Node:
             try:
                 deSocket.send(f"register;node;{self.host};{self.port}".encode())
                 self.nodeSocket_list.append(deSocket)
+                # Mise à jour de l'état du nœud dans la liste
                 for i in self.nodeIpPort_list:
                     if i[0] == ip and i[1] == port:
                         i[2] = 1
@@ -174,13 +192,18 @@ class Node:
     def connectNodesList(self):
         while True:
             self.removeClosedNodes()  # Nettoyer avant de tenter de nouvelles connexions
-            for node in self.nodeIpPort_list:
-                if node[2] == 0:
-                    t = threading.Thread(target=self.connectNode, args=(node[0], node[1], node[2])) 
-                    t.daemon = True  # Marquer comme daemon pour éviter de bloquer à la sortie
-                    t.start()
-                    t.join()
-            time.sleep(2)
+            # Créez une copie des nœuds pour éviter les problèmes de modification pendant l'itération
+            with self.lock:
+                nodes_to_connect = [(node[0], node[1], node[2]) for node in self.nodeIpPort_list if node[2] == 0]
+                
+            # Traiter chaque connexion en dehors du verrou
+            for ip, port, state in nodes_to_connect:
+                t = threading.Thread(target=self.connectNode, args=(ip, port, state)) 
+                t.daemon = True  # Marquer comme daemon pour éviter de bloquer à la sortie
+                t.start()
+                t.join(timeout=6)  # Timeout pour éviter le blocage
+                
+            time.sleep(5)  # Attendre avant de réessayer pour éviter les reconnexions en boucle
 
     def sendMessageNode(self, message: str) -> None:
         self.removeClosedNodes()  # Nettoyer avant d'envoyer
@@ -240,9 +263,9 @@ if __name__ == "__main__":
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])       # Mateo
+    #node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])       # Mateo
     #node.nodeIpPort_list.append(["10.66.66.4", 9102, 0])       # Justin
-    node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])       # Lucas
-    node.nodeIpPort_list.append(["10.66.66.3", 9102, 0])       # Valentin
+    #node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])       # Lucas
+    #node.nodeIpPort_list.append(["10.66.66.3", 9102, 0])       # Valentin
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
