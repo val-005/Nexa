@@ -42,10 +42,10 @@ class Node:
                                 exists = False
                                 for node in self.nodeIpPort_list:
                                     if node[0] == node_ip and node[1] == node_port:
-                                        node[2] = 1  # Marquer comme connecté
+                                        node[2] = 0  # Marquer comme non-connecté pour établir une connexion bidirectionnelle
                                         exists = True
                                 if not exists:
-                                    self.nodeIpPort_list.append([node_ip, node_port, 1])
+                                    self.nodeIpPort_list.append([node_ip, node_port, 0])  # État 0 pour que connectNodesList() établisse la connexion
                     
                     # Traitement des messages ordinaires (non-contrôle)
                     elif message != "register;":
@@ -107,7 +107,6 @@ class Node:
             except:
                 pass
     
-    # Les autres méthodes restent inchangées
     def removeClosedClients(self):
         """Supprime les clients déconnectés"""
         with self.lock:
@@ -241,9 +240,9 @@ if __name__ == "__main__":
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    #node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])       # Mateo
-    node.nodeIpPort_list.append(["10.66.66.4", 9102, 0])       # Justin
-    #node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])       # Lucas
-    #node.nodeIpPort_list.append(["10.66.66.3", 9102, 0])       # Valentin
+    node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])       # Mateo
+    #node.nodeIpPort_list.append(["10.66.66.4", 9102, 0])       # Justin
+    node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])       # Lucas
+    node.nodeIpPort_list.append(["10.66.66.3", 9102, 0])       # Valentin
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
