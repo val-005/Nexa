@@ -1,5 +1,6 @@
-import socket, threading, time
+import socket, threading, time, uuid, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from collections import deque
 
 class Node:
     def __init__(self, host: str, port: int):
@@ -8,7 +9,11 @@ class Node:
         self.client_list = []
         self.nodeSocket_list = []
         self.nodeIpPort_list = []
-        self.lock = threading.Lock()  # Ajout d'un verrou partagé
+        self.lock = threading.Lock()
+        # Cache des messages déjà traités (limité à 1000 entrées)
+        self.message_cache = deque(maxlen=1000)
+        # TTL par défaut pour les messages
+        self.DEFAULT_TTL = 5
 
     def handleClient(self, client_socket: socket.socket) -> None:
         try:
@@ -18,21 +23,16 @@ class Node:
                     
                     if not message:  # Connexion fermée
                         break
-                        
-                    # Format standardisé des messages
-                    if not any(message.strip().endswith(f";{i}") for i in range(len(self.nodeIpPort_list))):
-                        message += ";0"
+                    
+                    print(f"\nReçu: {message} par {client_socket.getpeername()[0]}")
 
-                    print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
-
-                    # Enregistrement des clients
+                    # Traitement des messages de contrôle
                     if "register;client;" in message:
                         with self.lock:
                             self.client_list.append(client_socket)
                     
-                    # Enregistrement des nœuds et récupération de leur liste de clients
                     elif "register;node;" in message:
-                        # Optionnel: extraire IP et port du nœud qui se connecte
+                        # Enregistrement d'un nouveau nœud
                         parts = message.split(';')
                         if len(parts) >= 4:
                             node_ip = parts[2]
@@ -47,12 +47,34 @@ class Node:
                                 if not exists:
                                     self.nodeIpPort_list.append([node_ip, node_port, 1])
                     
-                    # Gestion des messages ordinaires
+                    # Traitement des messages ordinaires (non-contrôle)
                     elif message != "register;":
-                        # Permettre le relais même s'il n'y a aucun autre nœud connu ou si le compteur de sauts est valide
-                        if len(self.nodeIpPort_list) == 0 or int(message.split(";")[3]) < len(self.nodeIpPort_list):
-                            # Formattage du message et incrémentation du compteur de sauts
-                            next_message = message.split(';')[0] + ";" + message.split(';')[1] + ";" + message.split(';')[2] + ';' + str(int(message.split(";")[3]) + 1)
+                        parts = message.split(';')
+                        
+                        # Si le format est ancien (sans ID et TTL), ajoutons-les
+                        if len(parts) <= 4:
+                            # Créer un ID unique
+                            msg_id = str(uuid.uuid4())
+                            # Ajouter un TTL par défaut
+                            message = f"{parts[0]};{parts[1]};{parts[2]};{msg_id};{self.DEFAULT_TTL}"
+                            parts = message.split(';')
+                        
+                        sender, content, recipient, msg_id, ttl = parts[0], parts[1], parts[2], parts[3], int(parts[4])
+                        
+                        # Vérifier si nous avons déjà traité ce message
+                        if msg_id in self.message_cache:
+                            continue  # Ignorer les messages déjà traités
+                        
+                        # Ajouter ce message à notre cache
+                        self.message_cache.append(msg_id)
+                        
+                        # Décrémenter le TTL
+                        ttl -= 1
+                        
+                        # Si le TTL est positif, on continue la propagation
+                        if ttl > 0:
+                            # Nouveau message avec TTL décrémenté
+                            next_message = f"{sender};{content};{recipient};{msg_id};{ttl}"
                             
                             # Envoi aux clients locaux
                             self.removeClosedClients()
@@ -66,7 +88,7 @@ class Node:
                                         if client in self.client_list:
                                             self.client_list.remove(client)
                             
-                            # Envoi aux autres nœuds (une seule fois)
+                            # Envoi aux autres nœuds
                             self.sendMessageNode(next_message)
 
                     if 'quit' in message.lower():
@@ -85,6 +107,7 @@ class Node:
             except:
                 pass
     
+    # Les autres méthodes restent inchangées
     def removeClosedClients(self):
         """Supprime les clients déconnectés"""
         with self.lock:
@@ -179,7 +202,7 @@ class Node:
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Permet la réutilisation d'adresse
         server_socket.bind((host, port))
         server_socket.listen()
-        print(f"Écoute sur {host} : {port}")
+        print(f"\nÉcoute sur {host} : {port}")
 
         while True:
             client_socket, _ = server_socket.accept()
@@ -207,7 +230,7 @@ class StatusHTTPRequestHandler(BaseHTTPRequestHandler):
 
 def run_http_server():
     httpd = HTTPServer(('0.0.0.0', 8080), StatusHTTPRequestHandler)
-    print("Serveur HTTP (endpoint /status) démarré sur le port 8080")
+    print("Serveur HTTP (endpoint /status) démarré sur le port 8080.\n")
     httpd.serve_forever()
 
 if __name__ == "__main__":
@@ -218,7 +241,9 @@ if __name__ == "__main__":
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])
-    #node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])
+    #node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])       # Mateo
+    node.nodeIpPort_list.append(["10.66.66.4", 9102, 0])       # Justin
+    #node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])       # Lucas
+    #node.nodeIpPort_list.append(["10.66.66.3", 9102, 0])       # Valentin
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
