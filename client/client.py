@@ -1,8 +1,8 @@
-import socket, threading
-import ast, uuid
+import socket, threading, ast, uuid
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
+
 
 class Client:
 
@@ -14,9 +14,11 @@ class Client:
         self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
         # Cache pour éviter d'afficher les messages dupliqués
         self.seen_messages = set()
+        self.quitting = False               # Permettra de fermer la connexion avec 'quit'
+
 
     def receive_message(self, client_socket: socket.socket) -> None:
-        #gère la réception des messages
+        # Gère la réception des messages
         while True:
             reponse = ""
             try:
@@ -53,7 +55,8 @@ class Client:
                     except Exception as e:
                         pass
             except Exception as e:
-                print(f"Erreur lors de la réception: {e}")
+                if not self.quitting:
+                    print(f"Erreur lors de la réception : {e}")
                 break
 
     def start(self) -> None:
@@ -66,7 +69,7 @@ class Client:
         try:
             client_socket.connect((host, port))
         except socket.error as e:
-            print(f"Erreur de connexion au serveur: {e}")
+            print(f"Erreur de connexion au serveur : {e}")
             return
 
         pseudo = input("Entrez votre pseudo : ")
@@ -75,24 +78,26 @@ class Client:
         print("\n========================== Connecté au serveur ============================")
         print(f"\nTa clé publique : {self.pubKey}")
 
-        #crée un processus pour recevoir les messages
+        # Crée un processus pour recevoir les messages
         threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))
-        threadMsg.daemon = True  # Important: Pour que le thread se termine avec le programme
+        threadMsg.daemon = True  # Pour que le thread se termine avec le programme
         threadMsg.start()
 
         while True:
             msg = input("")
 
-            if msg == 'quit':
-                print("\nDéconnexion du serveur...")
+            if msg == 'quit':               # Si l'utilisateur souhaite fermer la connexion avec les noeuds.
+                #print("\nTentative de déconnexion du serveur...")
+                self.quitting = True
 
                 try:
-                    client_socket.close()  # Ferme proprement le socket
+                    client_socket.close()   # Ferme proprement le socket
                 except Exception as e:
                     print(f"Erreur lors de la déconnexion : {e}")
 
-                threadMsg.join()  # Attend la fin du thread de réception
-                break  # Sort de la boucle après que tout soit bien fermé
+                threadMsg.join()            # Attend la fin du thread de réception
+                print("\nVous vous êtes déconnecté.")
+                break                       # Sort de la boucle après que tout soit bien fermé
             
             to = input("Clé du destinataire : ")
             
@@ -102,7 +107,7 @@ class Client:
             try:
                 msgEncrypt = encrypt(to, msg.encode())
             except Exception as e:
-                print(f"Erreur lors du chiffrement: {e}")
+                print(f"Erreur lors du chiffrement : {e}")
                 continue
 
             # Format: émetteur;message_chiffré;destinataire;ID_unique;TTL
@@ -110,11 +115,12 @@ class Client:
             try:
                 client_socket.send(msg_formaté.encode())
             except Exception as e:
-                print(f"Erreur lors de l'envoi: {e}")
+                print(f"Erreur lors de l'envoi : {e}")
                 break
         
         client_socket.close()
 
 if __name__ == "__main__":
-    cli = Client('bootstrap.nexachat.tech', 9102) #adresse du serveur
+    cli = Client('127.0.0.1', 9102)                 # Adresse du noeud
+    #cli = Client('bootstrap.nexachat.tech', 9102)   # Adresse du bootstrap
     cli.start()
