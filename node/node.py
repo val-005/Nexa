@@ -45,7 +45,7 @@ class Node:
                                         # Ne pas réinitialiser l'état si déjà connecté
                                         exists = True
                                         break
-                                if not exists:
+                                if not exists and node_ip != "0.0.0.0":
                                     self.nodeIpPort_list.append([node_ip, node_port, 0])  # État 0 pour que connectNodesList() établisse la connexion
                     
                     # Traitement des messages ordinaires (non-contrôle)
