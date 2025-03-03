@@ -50,8 +50,11 @@ class Client:
 
         while True:
             msg = input("")
-            if msg.lower() == 'quit':
+            if msg == 'quit':
                 break
+            for lettre in msg:
+                if lettre == " ' ":
+                    print("APPOSTROPHE DETECTEE")
 
             to = input("To: ")
             
