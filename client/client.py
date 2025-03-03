@@ -24,7 +24,7 @@ class Client:
                         msg = ast.literal_eval(str(msg)).decode()
                         print(f"{reponse.split(';')[0]}: {msg}")
                 except Exception as e:
-                    print(f"Erreur lors du déchiffrement: {e}")
+                    pass
 
     def start(self) -> None:
         #démarre le client
@@ -52,9 +52,9 @@ class Client:
             msg = input("")
             if msg == 'quit':
                 break
-            for lettre in msg:
+            """for lettre in msg:
                 if lettre == " ' ":
-                    print("APPOSTROPHE DETECTEE")
+                    print("APPOSTROPHE DETECTEE")"""
 
             to = input("To: ")
             

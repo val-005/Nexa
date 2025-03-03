@@ -20,7 +20,7 @@ class Node:
                         break
                         
                     # Format standardisé des messages
-                    if not message.strip().endswith(";0") and not message.strip().endswith(";1"):
+                    if not any(message.strip().endswith(f";{i}") for i in range(len(self.nodeIpPort_list))):
                         message += ";0"
 
                     print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
@@ -49,31 +49,25 @@ class Node:
                     
                     # Gestion des messages ordinaires
                     elif message != "register;":
-
-                        if int(message.split(";")[3]) < len(self.nodeIpPort_list):
-
-                            # Formattage du message (séparation de : pseudo, message chiffré, IP publique du receveur), et incrémentation de 1 pour éviter que le msg s'envoie à l'infini
+                        # Permettre le relais même s'il n'y a aucun autre nœud connu ou si le compteur de sauts est valide
+                        if len(self.nodeIpPort_list) == 0 or int(message.split(";")[3]) < len(self.nodeIpPort_list):
+                            # Formattage du message et incrémentation du compteur de sauts
                             next_message = message.split(';')[0] + ";" + message.split(';')[1] + ";" + message.split(';')[2] + ';' + str(int(message.split(";")[3]) + 1)
-                            self.sendMessageNode(next_message)
                             
+                            # Envoi aux clients locaux
                             self.removeClosedClients()
                             clients_copy = list(self.client_list)
                             for client in clients_copy:
-                                try:
-                                    client.send(next_message.encode())
-                                except (BrokenPipeError, ConnectionResetError):
-                                    print(f"Le client s'est déconnecté.")
-                                    if client in self.client_list:
-                                        self.client_list.remove(client)
+                                if client != client_socket:  # Éviter de renvoyer au client d'origine
+                                    try:
+                                        client.send(next_message.encode())
+                                    except (BrokenPipeError, ConnectionResetError):
+                                        print(f"Le client s'est déconnecté.")
+                                        if client in self.client_list:
+                                            self.client_list.remove(client)
                             
-                            nodes_copy = list(self.nodeSocket_list)
-                            for node in nodes_copy:
-                                try:
-                                    node.send(next_message.encode())
-                                except (BrokenPipeError, ConnectionResetError):
-                                    print(f"Le client s'est déconnecté.")
-                                    if node in self.nodeSocket_list:
-                                        self.nodeSocket_list.remove(node)
+                            # Envoi aux autres nœuds (une seule fois)
+                            self.sendMessageNode(next_message)
 
                     if 'quit' in message.lower():
                         break
@@ -96,9 +90,13 @@ class Node:
         with self.lock:
             for client in list(self.client_list):
                 try:
-                    # Test non bloquant pour vérifier si le socket est valide
+                    # Sauvegarde du timeout original
+                    original_timeout = client.gettimeout()
+                    # Test non bloquant
                     client.settimeout(0.1)
                     client.send(b'')  # Message vide pour tester la connexion
+                    # Restauration du timeout original
+                    client.settimeout(original_timeout)
                 except:
                     if client in self.client_list:
                         self.client_list.remove(client)
@@ -108,8 +106,13 @@ class Node:
         with self.lock:
             for sock in list(self.nodeSocket_list):
                 try:
+                    # Sauvegarde du timeout original
+                    original_timeout = sock.gettimeout()
+                    # Test non bloquant
                     sock.settimeout(0.1)
                     sock.send(b'')  # Message vide pour tester la connexion
+                    # Restauration du timeout original
+                    sock.settimeout(original_timeout)
                 except:
                     print(f"Suppression d'un nœud déconnecté")
                     if sock in self.nodeSocket_list:
@@ -215,7 +218,7 @@ if __name__ == "__main__":
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)
-    #node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])
+    node.nodeIpPort_list.append(["10.66.66.5", 9102, 0])
     #node.nodeIpPort_list.append(["10.66.66.2", 9102, 0])
     t2 = threading.Thread(target=node.connectNodesList)
     t2.start()
