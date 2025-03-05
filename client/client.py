@@ -1,8 +1,26 @@
-import socket, threading, ast, uuid
+import socket, threading, ast, uuid, requests
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 
+available_nodes = []
+
+def get_nodes():
+    url = "https://bootstrap.nexachat.tech/upNodes"
+    response = requests.get(url)
+    response.raise_for_status() 
+    nodes = response.json()
+    return nodes
+
+
+def async_getnodes(interval=60):
+    global available_nodes  
+    available_nodes = get_nodes()
+    if len(available_nodes) == 0:
+        print("Aucun noeud en ligne")
+    else:
+        print("Mise à jour des noeuds:", available_nodes)
+    threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
 
@@ -63,6 +81,16 @@ class Client:
         #démarre le client
         host = self.host        # Adresse du serveur
         port = self.port        # Port du serveur
+        
+        # Si la var host est sur auto, on utilise un noeud disponible aléatoirement
+        if host == "auto" and available_nodes:
+            import random
+            node = random.choice(available_nodes)
+            # Séparation de la chaîne "host:port"
+            node_parts = node.split(":")
+            host = node_parts[0]
+            port = int(node_parts[1])  
+            print(f"Connexion automatique au noeud: {host}:{port}")
 
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -121,6 +149,8 @@ class Client:
         client_socket.close()
 
 if __name__ == "__main__":
-    cli = Client('217.154.11.237', 9102)                 # Adresse du noeud
-    #cli = Client('bootstrap.nexachat.tech', 9102)   # Adresse du bootstrap
+    async_getnodes()
+    # "auto" pour se connecter aléatoirement à un noeud
+    cli = Client('auto', 0)    
+    # cli = Client('217.154.11.237', 9102)
     cli.start()
