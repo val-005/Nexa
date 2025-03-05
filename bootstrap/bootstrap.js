@@ -29,11 +29,16 @@ const checkNodes = async () => {
     const upNodes = [];
     for (const col of table) {
       try {
-        const response = await axios.get(`http://${col.node}:8080/status`, {
-        });
-        if (response.status === 200) {
-          upNodes.push(col.node);
-        }
+      const host = col.node.split(':')[0];
+      const url = `http://${host}:8080/status`;
+      
+      const response = await axios.get(url, {
+        timeout: 5000 
+      });
+      
+      if (response.status === 200) {
+        upNodes.push(col.node);
+      }
       } catch (error) {
       }
     }
