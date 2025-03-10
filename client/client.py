@@ -1,4 +1,4 @@
-import socket, threading, ast, uuid, requests, pyperclip
+import socket, random, threading, ast, uuid, requests, pyperclip, sys, os
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -83,8 +83,6 @@ class Client:
 		port = self.port							# Port du serveur
 		
 		if host == "auto" and available_nodes:								# Si la var host est sur auto, on utilise un noeud disponible aléatoirement
-			import random
-
 			node = random.choice(available_nodes)
 			node_parts = node.split(":")								# Séparation de la chaîne "host:port"
 			host = node_parts[0]
@@ -128,7 +126,25 @@ class Client:
 			elif msg == 'copy' or msg == 'copie':					# Permet au client de copier sa clé publique
 				pyperclip.copy(self.pubKey)
 				print("Ta clé publique a été copiée dans le presse-papiers.")
-				continue											# Permet de relancer la boucle While
+				continue                                            # Permet de relancer la boucle While
+
+			elif msg == 'reconnect' or msg == 'reboot' or msg == 'restart':
+				print("\nTentative de reconnexion...")
+				client_socket.close()
+				threadMsg.join()
+				client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)							# Crée une nouvelle connexion
+				try:
+					client_socket.connect((host, port))
+					registration_msg = f"register;client;{pseudo}"
+					client_socket.send(registration_msg.encode())
+					print("\nReconnecté au serveur !")
+
+					threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))		# Relance le thread de réception
+					threadMsg.daemon = True
+					threadMsg.start()
+				except socket.error as e:
+					print(f"Erreur de reconnexion : {e}")
+				continue
 			
 			to = input("Clé du destinataire : ")
 			msg_id = str(uuid.uuid4())
@@ -137,7 +153,7 @@ class Client:
 			client_socket.send(msg_formaté.encode())
 
 if __name__ == "__main__":
-	async_getnodes()														# A mettre en commentaire pour se connecter en localhost
-	cli = Client('auto', 0)													# "auto" pour se connecter aléatoirement à un noeud
-	# cli = Client('217.154.11.237', 9102)
+	#async_getnodes()														# A mettre en commentaire pour se connecter en localhost
+	#cli = Client('auto', 0)												# "auto" pour se connecter aléatoirement à un noeud
+	cli = Client('nexa.0xzknw.me', 9102)
 	cli.start()
