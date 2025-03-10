@@ -17,9 +17,9 @@ def async_getnodes(interval=60):
     global available_nodes  
     available_nodes = get_nodes()
     if len(available_nodes) == 0:
-        print("Aucun noeud en ligne")
+        print("Aucun noeud en ligne.")
     else:
-        print("Mise à jour des noeuds:", available_nodes)
+        print("Mise à jour des noeuds :", available_nodes)
     threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
@@ -30,13 +30,12 @@ class Client:
         self.keys = generate_eth_key()
         self.privKey = self.keys.to_hex()
         self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-        # Cache pour éviter d'afficher les messages dupliqués
-        self.seen_messages = set()
-        self.quitting = False               # Permettra de fermer la connexion avec 'quit'
+        
+        self.seen_messages = set()														# Cache pour éviter d'afficher les messages dupliqués
+        self.quitting = False               											# Permet de fermer la connexion avec 'quit'
 
 
-    def receive_message(self, client_socket: socket.socket) -> None:
-        # Gère la réception des messages
+    def receive_message(self, client_socket: socket.socket) -> None:					# Gère la réception des messages
         while True:
             reponse = ""
             try:
@@ -53,20 +52,16 @@ class Client:
                         recipient = parts[2]
                         msg_id = parts[3] if len(parts) > 3 else None
                         
-                        # Si on a déjà vu ce message (par son ID), on l'ignore
-                        if msg_id and msg_id in self.seen_messages:
+                        if msg_id and msg_id in self.seen_messages:						# Si on a déjà vu ce message (par son ID), on l'ignore
                             continue
-                            
-                        # Ajouter à la liste des messages vus
-                        if msg_id:
+
+                        if msg_id:														# Ajouter à la liste des messages vus
                             self.seen_messages.add(msg_id)
                             
-                            # Limiter la taille du cache
-                            if len(self.seen_messages) > 1000:
+                            if len(self.seen_messages) > 1000:							# Limiter la taille du cache
                                 self.seen_messages.pop()
-                        
-                        # Déchiffrement du message
-                        msg = decrypt(self.privKey, bytes.fromhex(content))
+
+                        msg = decrypt(self.privKey, bytes.fromhex(content))				# Déchiffrement du message
                         if str(msg).startswith("b'") and str(msg).endswith("'"):
                             msg = ast.literal_eval(str(msg)).decode()
                             print(f"{sender}: {msg}")
@@ -77,20 +72,17 @@ class Client:
                     print(f"Erreur lors de la réception : {e}")
                 break
 
-    def start(self) -> None:
-        #démarre le client
-        host = self.host        # Adresse du serveur
-        port = self.port        # Port du serveur
+    def start(self) -> None:												# Démarre le client, et permet d'envoyer des messages
+        host = self.host        					# Adresse du serveur
+        port = self.port        					# Port du serveur
         
-        # Si la var host est sur auto, on utilise un noeud disponible aléatoirement
-        if host == "auto" and available_nodes:
+        if host == "auto" and available_nodes:								# Si la var host est sur auto, on utilise un noeud disponible aléatoirement
             import random
             node = random.choice(available_nodes)
-            # Séparation de la chaîne "host:port"
-            node_parts = node.split(":")
+            node_parts = node.split(":")									# Séparation de la chaîne "host:port"
             host = node_parts[0]
             port = int(node_parts[1])  
-            print(f"Connexion automatique au noeud: {host}:{port}")
+            print(f"Connexion automatique au noeud : {host}:{port}")
 
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -106,31 +98,29 @@ class Client:
         print("\n========================== Connecté au serveur ============================")
         print(f"\nTa clé publique : {self.pubKey}")
 
-        # Crée un processus pour recevoir les messages
-        threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))
-        threadMsg.daemon = True  # Pour que le thread se termine avec le programme
+        threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))		# Crée un processus pour recevoir les messages
+        threadMsg.daemon = True
         threadMsg.start()
 
         while True:
             msg = input("")
 
-            if msg == 'quit':               # Si l'utilisateur souhaite fermer la connexion avec les noeuds.
+            if msg == 'quit':												# Si l'utilisateur souhaite fermer la connexion avec les noeuds
                 #print("\nTentative de déconnexion du serveur...")
                 self.quitting = True
 
                 try:
-                    client_socket.close()   # Ferme proprement le socket
+                    client_socket.close()									# Ferme proprement le socket
                 except Exception as e:
                     print(f"Erreur lors de la déconnexion : {e}")
 
-                threadMsg.join()            # Attend la fin du thread de réception
+                threadMsg.join()											# Attend la fin du thread de réception
                 print("\nVous vous êtes déconnecté.")
-                break                       # Sort de la boucle après que tout soit bien fermé
+                break														# Sort de la boucle après que tout soit bien fermé
             
             to = input("Clé du destinataire : ")
             
-            # Générer un identifiant unique pour ce message
-            msg_id = str(uuid.uuid4())
+            msg_id = str(uuid.uuid4())										# Génére un identifiant unique pour ce message
             
             try:
                 msgEncrypt = encrypt(to, msg.encode())
@@ -138,8 +128,7 @@ class Client:
                 print(f"Erreur lors du chiffrement : {e}")
                 continue
 
-            # Format: émetteur;message_chiffré;destinataire;ID_unique;TTL
-            msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"
+            msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"	# Format: émetteur;message_chiffré;destinataire;ID_unique;TTL
             try:
                 client_socket.send(msg_formaté.encode())
             except Exception as e:
@@ -150,7 +139,6 @@ class Client:
 
 if __name__ == "__main__":
     async_getnodes()
-    # "auto" pour se connecter aléatoirement à un noeud
-    cli = Client('auto', 0)    
+    cli = Client('auto', 0)													# "auto" pour se connecter aléatoirement à un noeud
     # cli = Client('217.154.11.237', 9102)
     cli.start()
