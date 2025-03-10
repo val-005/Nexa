@@ -246,10 +246,6 @@ class StatusHTTPRequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    # Désactiver les logs pour éviter la sortie standard inutile
-    def log_message(self, format, *args):
-        return
-
 def run_http_server():
     httpd = HTTPServer(('0.0.0.0', 8080), StatusHTTPRequestHandler)
     print("Serveur HTTP (endpoint /status) démarré sur le port 8080.\n")
