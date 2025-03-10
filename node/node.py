@@ -24,7 +24,7 @@ class Node:
                     if not message:  # Connexion fermée
                         break
                     
-                    print(f"\nReçu: {message} par {client_socket.getpeername()[0]}")
+                    print(f"Reçu: {message} par {client_socket.getpeername()[0]}")
 
                     # Traitement des messages de contrôle
                     if "register;client;" in message:

@@ -14,7 +14,8 @@ def get_nodes():
 
 
 def async_getnodes(interval=60):
-    global available_nodes  
+    global available_nodes
+    print("Tentative de connection aux nœuds...")
     available_nodes = get_nodes()
     if len(available_nodes) == 0:
         print("Aucun noeud en ligne.")
@@ -49,7 +50,7 @@ class Client:
                         parts = reponse.split(';')
                         sender = parts[0]
                         content = parts[1]
-                        recipient = parts[2]
+                        #recipient = parts[2]
                         msg_id = parts[3] if len(parts) > 3 else None
                         
                         if msg_id and msg_id in self.seen_messages:						# Si on a déjà vu ce message (par son ID), on l'ignore
@@ -64,7 +65,14 @@ class Client:
                         msg = decrypt(self.privKey, bytes.fromhex(content))				# Déchiffrement du message
                         if str(msg).startswith("b'") and str(msg).endswith("'"):
                             msg = ast.literal_eval(str(msg)).decode()
-                            print(f"{sender}: {msg}")
+                            new_msg = ""													# Message avec des "¤" au lieu des apostrophes
+                            for lettre in msg:
+                                if lettre == "¤":
+                                    new_msg += "'"
+                                else:
+                                    new_msg += lettre
+            				#print("Msg sans l'apostrophe :", new_msg)
+                            print(f"{sender}: {new_msg}")
                     except Exception as e:
                         pass
             except Exception as e:
@@ -73,8 +81,8 @@ class Client:
                 break
 
     def start(self) -> None:												# Démarre le client, et permet d'envoyer des messages
-        host = self.host        					# Adresse du serveur
-        port = self.port        					# Port du serveur
+        host = self.host							# Adresse du serveur
+        port = self.port							# Port du serveur
         
         if host == "auto" and available_nodes:								# Si la var host est sur auto, on utilise un noeud disponible aléatoirement
             import random
@@ -95,7 +103,7 @@ class Client:
         pseudo = input("Entrez votre pseudo : ")
         registration_msg = f"register;client;{pseudo}"
         client_socket.send(registration_msg.encode())
-        print("\n========================== Connecté au serveur ============================")
+        print("\n=========================={ Connecté au serveur }============================")
         print(f"\nTa clé publique : {self.pubKey}")
 
         threadMsg = threading.Thread(target=self.receive_message, args=(client_socket,))		# Crée un processus pour recevoir les messages
@@ -104,9 +112,16 @@ class Client:
 
         while True:
             msg = input("")
-
+            new_msg = ""													# Message avec des "¤" au lieu des apostrophes
+            for lettre in msg:
+                if lettre == "'":
+                    #print("Apostrophe détectée !")
+                    new_msg += "¤"
+                else:
+                    new_msg += lettre
+            #print("Msg sans l'apostrophe :", new_msg)
+            
             if msg == 'quit':												# Si l'utilisateur souhaite fermer la connexion avec les noeuds
-                #print("\nTentative de déconnexion du serveur...")
                 self.quitting = True
 
                 try:
@@ -123,12 +138,12 @@ class Client:
             msg_id = str(uuid.uuid4())										# Génére un identifiant unique pour ce message
             
             try:
-                msgEncrypt = encrypt(to, msg.encode())
+                msgEncrypt = encrypt(to, new_msg.encode())
             except Exception as e:
                 print(f"Erreur lors du chiffrement : {e}")
                 continue
 
-            msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"	# Format: émetteur;message_chiffré;destinataire;ID_unique;TTL
+            msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"	# Format : émetteur;message_chiffré;destinataire;ID_unique;TTL
             try:
                 client_socket.send(msg_formaté.encode())
             except Exception as e:
@@ -138,7 +153,8 @@ class Client:
         client_socket.close()
 
 if __name__ == "__main__":
-    async_getnodes()
-    cli = Client('auto', 0)													# "auto" pour se connecter aléatoirement à un noeud
+    # async_getnodes()														# A mettre en commentaire pour se connecter en localhost
+    cli = Client('127.0.0.1', 9102)
+    # cli = Client('auto', 0)												# "auto" pour se connecter aléatoirement à un noeud
     # cli = Client('217.154.11.237', 9102)
     cli.start()
