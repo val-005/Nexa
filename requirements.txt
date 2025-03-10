@@ -1,2 +1,3 @@
 eciespy
 requests
+pyperclip

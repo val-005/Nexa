@@ -1,4 +1,4 @@
-import socket, threading, ast, uuid, requests
+import socket, threading, ast, uuid, requests, pyperclip
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -15,12 +15,11 @@ def get_nodes():
 
 def async_getnodes(interval=60):
 	global available_nodes
-	print("Tentative de connection aux nœuds...")
 	available_nodes = get_nodes()
 	if len(available_nodes) == 0:
 		print("Aucun noeud en ligne.")
-	else:
-		print("Mise à jour des noeuds :", available_nodes)
+	#else:
+		#print("Mise à jour des noeuds :", available_nodes)
 	threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
@@ -85,6 +84,7 @@ class Client:
 		
 		if host == "auto" and available_nodes:								# Si la var host est sur auto, on utilise un noeud disponible aléatoirement
 			import random
+
 			node = random.choice(available_nodes)
 			node_parts = node.split(":")								# Séparation de la chaîne "host:port"
 			host = node_parts[0]
@@ -124,6 +124,11 @@ class Client:
 				threadMsg.join()
 				print("\nVous vous êtes déconnecté.")
 				break
+
+			elif msg == 'copy' or msg == 'copie':					# Permet au client de copier sa clé publique
+				pyperclip.copy(self.pubKey)
+				print("Ta clé publique a été copiée dans le presse-papiers.")
+				continue											# Permet de relancer la boucle While
 			
 			to = input("Clé du destinataire : ")
 			msg_id = str(uuid.uuid4())
@@ -132,5 +137,7 @@ class Client:
 			client_socket.send(msg_formaté.encode())
 
 if __name__ == "__main__":
-	cli = Client('127.0.0.1', 9102)
+	async_getnodes()														# A mettre en commentaire pour se connecter en localhost
+	cli = Client('auto', 0)													# "auto" pour se connecter aléatoirement à un noeud
+	# cli = Client('217.154.11.237', 9102)
 	cli.start()
