@@ -2,6 +2,19 @@ import socket, threading, time, uuid, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from collections import deque
 
+import subprocess
+import requests
+
+def get_public_ip():
+    try:
+        result = subprocess.run(['curl', '-s', 'ipinfo.io/ip'], capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"Erreur lors de la récupération de l'ip: {e}")
+        return None
+    
+publicip = get_public_ip()
+
 class Node:
     def __init__(self, host: str, port: int):
         self.host = host
@@ -235,27 +248,8 @@ class Node:
             thread.daemon = True
             thread.start()
 
-class StatusHTTPRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/status':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.send_header('Content-Length', '2')
-            self.end_headers()
-            self.wfile.write(b'OK')
-        else:
-            self.send_error(404)
-
-def run_http_server():
-    httpd = HTTPServer(('0.0.0.0', 8080), StatusHTTPRequestHandler)
-    print("Serveur HTTP (endpoint /status) démarré sur le port 8080.\n")
-    httpd.serve_forever()
-
 if __name__ == "__main__":
-    http_thread = threading.Thread(target=run_http_server)
-    http_thread.daemon = True
-    http_thread.start()
-    node = Node('0.0.0.0', 9102)
+    node = Node(publicip, 9102)
     t = threading.Thread(target=node.start)
     t.start()
     time.sleep(1)

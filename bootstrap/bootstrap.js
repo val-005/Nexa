@@ -8,6 +8,7 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
+const net = require("net");
 
 const dbPath = process.env.DB_PATH || "db.sqlite";
 const fullPath = path.resolve(dbPath);
@@ -19,6 +20,26 @@ db.serialize(() => {
 
 const PROTOCOL = process.env.NODE_PROTOCOL || 'http';
 
+const NodeSocketCheck = (host, port, timeout = 5000) => {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeout);
+    
+    socket.connect(port, host, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+};
+
 const checkNodes = async () => {
   db.all("SELECT node FROM nodes", async (err, table) => {
     if (err) {
@@ -29,16 +50,12 @@ const checkNodes = async () => {
     const upNodes = [];
     for (const col of table) {
       try {
-      const host = col.node.split(':')[0];
-      const url = `http://${host}:8080/status`;
-      
-      const response = await axios.get(url, {
-        timeout: 5000 
-      });
-      
-      if (response.status === 200) {
-        upNodes.push(col.node);
-      }
+        const [host, port] = col.node.split(':');
+        const isAlive = await NodeSocketCheck(host, parseInt(port));
+        
+        if (isAlive) {
+          upNodes.push(col.node);
+        }
       } catch (error) {
       }
     }
