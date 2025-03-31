@@ -25,13 +25,20 @@ class Client:
 	def __init__(self, host: str, port: int):
 		self.host = host
 		self.port = port
-		self.keys = generate_eth_key()
-		self.privKey = self.keys.to_hex()
-		self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-		
-		self.seen_messages = set()  # Cache pour éviter d'afficher les messages dupliqués
-		self.quitting = False  # Permet de fermer la connexion avec 'quit'
-		
+		try:
+			with open("privkey.key", "r") as f:
+				self.privKey = f.readline().strip()
+				self.pubKey = f.readline().strip()
+		except FileNotFoundError:
+			with open("privkey.key", "w") as f:
+				self.keys = generate_eth_key()
+				self.privKey = self.keys.to_hex()
+				self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
+				f.write(self.privKey + "\n" + self.pubKey)
+        
+		self.seen_messages = set()	# Cache pour éviter d'afficher les messages dupliqués
+		self.quitting = False 		# Permet de fermer la connexion avec 'quit'
+        
 		# Créer un event loop pour les opérations asynchrones
 		self.loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(self.loop)
@@ -78,7 +85,7 @@ class Client:
 				print("Connexion au serveur perdue.")
 		except Exception as e:
 			if not self.quitting:
-				print(f"Erreur lors de la réception : {e}")
+				print(f'Erreur lors de la réception du message. ("{e}")')
 	
 	async def connect_and_send(self):
 		"""Établit une connexion WebSocket et gère l'envoi de messages"""
@@ -103,6 +110,18 @@ class Client:
 					pseudo = input("Entrez votre pseudo : ")
 					if not pseudo.strip():
 						print("\nTu ne peux pas avoir un pseudo vide.")
+					elif pseudo == 'quit':
+						self.quitting = True
+						print("Fermeture du programme...")
+						import sys, os, platform
+						
+						# Determine OS and close terminal with appropriate command
+						if platform.system() == "Windows":
+							os.system("taskkill /F /PID " + str(os.getppid()))
+						else:  # Unix-like systems (Linux, macOS)
+							os.system("kill -9 " + str(os.getppid()))
+						
+						sys.exit(0)  # Termine immédiatement le programme
 				registration_msg = f"register;client;{pseudo}"
 				await websocket.send(registration_msg)
 				
@@ -126,7 +145,16 @@ class Client:
 					
 					if msg == 'quit':
 						self.quitting = True
-						break
+						print("Fermeture du programme...\n")
+						import sys, os, platform
+						
+						# Détermine l'OS utilisé et ferme le programme
+						if platform.system() == "Windows":
+							os.system("taskkill /F /PID " + str(os.getppid()))
+						else:  # Unix-like systems (Linux, macOS)
+							os.system("kill -9 " + str(os.getppid()))
+						
+						sys.exit(0)
 
 					elif msg == 'copy':
 						pyperclip.copy(self.pubKey)
@@ -138,7 +166,7 @@ class Client:
 					try:
 						msgEncrypt = encrypt(to, new_msg.encode())
 					except Exception as e:
-						print(f"Erreur lors du chiffrement avec la clé du destinataire: {e}")
+						print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
 						continue
 					msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"
 					await websocket.send(msg_formaté)
@@ -150,7 +178,7 @@ class Client:
 		except websockets.exceptions.ConnectionClosed:
 			print("Connexion fermée par le serveur.")
 		except Exception as e:
-			print(f"Erreur de connexion : {e}")
+			print(f'Erreur de connexion au serveur. ("{e}")')
 	
 	def start(self):
 		"""Démarre le client"""
@@ -164,5 +192,5 @@ class Client:
 if __name__ == "__main__":
 	async_getnodes()  # A mettre en commentaire pour se connecter en localhost
 	cli = Client('auto', 9102)  # "auto" pour se connecter aléatoirement à un noeud
-	# cli = Client('217.154.11.237', 9102)
+	#cli = Client('10.66.66.5', 9102)
 	cli.start()

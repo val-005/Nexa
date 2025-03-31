@@ -642,6 +642,7 @@ def run_http_server(node_ref):
 if __name__ == "__main__":
     # Créer l'instance du nœud
     node = Node('0.0.0.0', 9102)
+    #node.nodeIpPort_list.append(["10.66.66.4", 9102])		# Pour tests
 
     # Démarrer le serveur HTTP dans un thread séparé en lui passant la référence du noeud
     http_thread = threading.Thread(target=run_http_server, args=(node,), daemon=True)
