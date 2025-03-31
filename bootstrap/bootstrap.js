@@ -9,6 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const net = require("net");
+const WebSocket = require('ws');
 
 const dbPath = process.env.DB_PATH || "db.sqlite";
 const fullPath = path.resolve(dbPath);
@@ -22,19 +23,24 @@ const PROTOCOL = process.env.NODE_PROTOCOL || 'http';
 
 const NodeSocketCheck = (host, port, timeout = 5000) => {
   return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(timeout);
+    const protocol = port === 443 ? 'wss' : 'ws';
+    const url = `${protocol}://${host}:${port}`;
+    const ws = new WebSocket(url);
     
-    socket.connect(port, host, () => {
-      socket.destroy();
+    const timeoutId = setTimeout(() => {
+      ws.terminate();
+      resolve(false);
+    }, timeout);
+    
+    ws.on('open', () => {
+      clearTimeout(timeoutId);
+      ws.close();
       resolve(true);
     });
-    socket.on("error", () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.on("timeout", () => {
-      socket.destroy();
+    
+    ws.on('error', () => {
+      clearTimeout(timeoutId);
+      ws.terminate();
       resolve(false);
     });
   });
