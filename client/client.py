@@ -1,4 +1,4 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random
+import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -112,16 +112,15 @@ class Client:
 						print("\nTu ne peux pas avoir un pseudo vide.")
 					elif pseudo == 'quit':
 						self.quitting = True
-						print("Fermeture du programme...")
-						import sys, os, platform
+						print("Fermeture du programme...\n")
 						
-						# Determine OS and close terminal with appropriate command
+						# Détermine l'OS et ferme le programme
 						if platform.system() == "Windows":
 							os.system("taskkill /F /PID " + str(os.getppid()))
-						else:  # Unix-like systems (Linux, macOS)
-							os.system("kill -9 " + str(os.getppid()))
+						else:  														# Systèmes Linux/Unix
+							os.kill(os.getpid(), signal.SIGTERM)
+							sys.exit(0)
 						
-						sys.exit(0)  # Termine immédiatement le programme
 				registration_msg = f"register;client;{pseudo}"
 				await websocket.send(registration_msg)
 				
@@ -146,34 +145,35 @@ class Client:
 					if msg == 'quit':
 						self.quitting = True
 						print("Fermeture du programme...\n")
-						import sys, os, platform
 						
-						# Détermine l'OS utilisé et ferme le programme
+						# Détermine l'OS et ferme le programme
 						if platform.system() == "Windows":
 							os.system("taskkill /F /PID " + str(os.getppid()))
-						else:  # Unix-like systems (Linux, macOS)
-							os.system("kill -9 " + str(os.getppid()))
-						
-						sys.exit(0)
+						else:  														# Systèmes Linux/Unix
+							os.kill(os.getpid(), signal.SIGTERM)
+							sys.exit(0)
 
 					elif msg == 'copy':
 						pyperclip.copy(self.pubKey)
 						print("Ta clé publique a bien été copiée.")
 						continue
 					
-					to = await asyncio.to_thread(input, "Clé du destinataire : ")
-					msg_id = str(uuid.uuid4())
-					try:
-						msgEncrypt = encrypt(to, new_msg.encode())
-					except Exception as e:
-						print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
-						continue
+					# Deuxième boucle pour obtenir une clé publique valide
+					while True:
+						to = await asyncio.to_thread(input, "Clé du destinataire : ")
+						msg_id = str(uuid.uuid4())
+						try:
+							msgEncrypt = encrypt(to, new_msg.encode())
+							break  # Sortir de la boucle si la clé est valide
+						except Exception as e:
+							print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
+					
 					msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"
 					await websocket.send(msg_formaté)
 				
 				# Annuler la tâche de réception des messages
-				receive_task.cancel()
-				print("\nVous vous êtes déconnecté.")
+				#receive_task.cancel()
+				#print("\nVous vous êtes déconnecté.")
 		
 		except websockets.exceptions.ConnectionClosed:
 			print("Connexion fermée par le serveur.")

@@ -1,5 +1,5 @@
 eciespy
+eth-keys
 requests
 pyperclip
-eth-keys
 websockets
