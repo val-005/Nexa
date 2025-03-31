@@ -131,7 +131,11 @@ class Client:
 					
 					to = await asyncio.to_thread(input, "Clé du destinataire : ")
 					msg_id = str(uuid.uuid4())
-					msgEncrypt = encrypt(to, new_msg.encode())
+					try:
+						msgEncrypt = encrypt(to, new_msg.encode())
+					except Exception as e:
+						print(f"Erreur lors du chiffrement avec la clé du destinataire: {e}")
+						continue
 					msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"
 					await websocket.send(msg_formaté)
 				
