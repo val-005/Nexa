@@ -17,8 +17,8 @@ def async_getnodes(interval=60):
 	available_nodes = get_nodes()
 	if len(available_nodes) == 0:
 		print("Aucun noeud en ligne.")
-	else:
-		print("Mise à jour des noeuds :", available_nodes)
+	#else:
+	#	print(f"\nMise à jour des noeuds : {available_nodes}")				# Affiche les nœuds en ligne
 	threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
@@ -185,7 +185,15 @@ class Client:
 		try:
 			self.loop.run_until_complete(self.connect_and_send())
 		except KeyboardInterrupt:
-			print("\nClient arrêté par l'utilisateur.")
+			self.quitting = True
+			print("\nFermeture du programme...\n")
+
+			# Détermine l'OS et ferme le programme
+			if platform.system() == "Windows":
+				os.system("taskkill /F /PID " + str(os.getppid()))
+			else:  														# Systèmes Linux/Unix
+				os.kill(os.getpid(), signal.SIGTERM)
+			sys.exit(0)
 		finally:
 			self.loop.close()
 
