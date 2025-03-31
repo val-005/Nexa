@@ -1,4 +1,4 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip
+import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -86,7 +86,6 @@ class Client:
 		port = self.port
 		
 		if host == "auto" and available_nodes:
-			import random
 			node = random.choice(available_nodes)
 			node_parts = node.split(":")
 			host = node_parts[0]
@@ -155,7 +154,7 @@ class Client:
 			self.loop.close()
 
 if __name__ == "__main__":
-	#async_getnodes()  # A mettre en commentaire pour se connecter en localhost
-	cli = Client('10.66.66.4', 9102)  # "auto" pour se connecter aléatoirement à un noeud
+	async_getnodes()  # A mettre en commentaire pour se connecter en localhost
+	cli = Client('auto', 9102)  # "auto" pour se connecter aléatoirement à un noeud
 	# cli = Client('217.154.11.237', 9102)
 	cli.start()
