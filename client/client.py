@@ -98,7 +98,11 @@ class Client:
 				self.websocket = websocket
 				
 				# Envoyer le message d'enregistrement
-				pseudo = input("Entrez votre pseudo : ")
+				pseudo = ""
+				while not pseudo.strip():
+					pseudo = input("Entrez votre pseudo : ")
+					if not pseudo.strip():
+						print("\nTu ne peux pas avoir un pseudo vide.")
 				registration_msg = f"register;client;{pseudo}"
 				await websocket.send(registration_msg)
 				
