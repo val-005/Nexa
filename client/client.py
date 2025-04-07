@@ -46,7 +46,7 @@ class Client:
 						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 						with open("privkey.key", "w") as f2:
 							f2.write(self.privKey + "\n" + self.pubKey)
-		except FileNotFoundError:											# Si le fichier n'existe pas
+		except FileNotFoundError:										# Si le fichier n'existe pas
 			self.keys = generate_eth_key()
 			self.privKey = self.keys.to_hex()
 			self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
@@ -56,7 +56,6 @@ class Client:
 		self.seen_messages = set()	# Cache pour éviter d'afficher les messages dupliqués
 		self.quitting = False 		# Permet de fermer la connexion avec 'quit'
         
-		# Créer un event loop pour les opérations asynchrones
 		self.loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(self.loop)
 		self.websocket = None
@@ -77,13 +76,13 @@ class Client:
 						msg_id = parts[3] if len(parts) > 3 else None
 						
 						if msg_id and msg_id in self.seen_messages:
-							continue  # Ignorer les messages déjà vus
+							continue  # Ignore les messages déjà vus
 						
 						if msg_id:
 							self.seen_messages.add(msg_id)
 							
 							if len(self.seen_messages) > 1000:
-								self.seen_messages.pop()  # Limiter la taille du cache
+								self.seen_messages.pop()  # Limite la taille du cache
 						
 						msg = decrypt(self.privKey, bytes.fromhex(content))  # Déchiffrement du message
 						if str(msg).startswith("b'") and str(msg).endswith("'"):
@@ -120,8 +119,7 @@ class Client:
 		try:
 			async with websockets.connect(uri) as websocket:
 				self.websocket = websocket
-				
-				# Envoyer le message d'enregistrement
+		
 				pseudo = ""
 				while not pseudo.strip():
 					pseudo = input("Entrez votre pseudo : ")
@@ -163,6 +161,8 @@ class Client:
 						self.quitting = True
 						print("Fermeture du programme...\n")
 						
+						receive_task.cancel()										# Annuler la tâche de réception des messages
+						
 						# Détermine l'OS et ferme le programme
 						if platform.system() == "Windows":
 							os.system("taskkill /F /PID " + str(os.getppid()))
@@ -178,19 +178,18 @@ class Client:
 					# Deuxième boucle pour obtenir une clé publique valide
 					while True:
 						to = await asyncio.to_thread(input, "Clé du destinataire : ")
-						msg_id = str(uuid.uuid4())
-						try:
-							msgEncrypt = encrypt(to, new_msg.encode())
-							break  # Sortir de la boucle si la clé est valide
-						except Exception as e:
-							print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
-					
-					msg_formaté = f"{pseudo};{msgEncrypt.hex()};{to};{msg_id};5"
-					await websocket.send(msg_formaté)
-				
-				# Annuler la tâche de réception des messages
-				#receive_task.cancel()
-				#print("\nVous vous êtes déconnecté.")
+						if to == 'copy':
+							pyperclip.copy(self.pubKey)
+							print("Ta clé publique a bien été copiée.")
+							continue
+						else:
+							msg_id = str(uuid.uuid4())
+							try:
+								msgEncrypt = encrypt(to, new_msg.encode())
+								await websocket.send(f"{pseudo};{msgEncrypt.hex()};{to};{msg_id}")
+								break  # Sortir de la boucle si la clé est valide
+							except Exception as e:
+								print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
 		
 		except websockets.exceptions.ConnectionClosed:
 			print("Connexion fermée par le serveur.")
@@ -215,7 +214,7 @@ class Client:
 			self.loop.close()
 
 if __name__ == "__main__":
-	async_getnodes()  # A mettre en commentaire pour se connecter en localhost
-	cli = Client('auto', 9102)  # "auto" pour se connecter aléatoirement à un noeud
-	#cli = Client('10.66.66.5', 9102)
+	async_getnodes()  						# Tests en localhost
+	#cli = Client('10.66.66.5', 9102)		# Tests en localhost
+	cli = Client('auto', 9102)				# "auto" pour se connecter aléatoirement à un noeud
 	cli.start()
