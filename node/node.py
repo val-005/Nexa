@@ -8,6 +8,7 @@ import requests # Ajouté pour les requêtes HTTP
 from concurrent.futures import ThreadPoolExecutor # Ajouté pour exécuter requests en non-bloquant
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from collections import deque
+import sqlite3
 
 class Node:
     def __init__(self, host: str, port: int):
@@ -29,6 +30,22 @@ class Node:
         self.executor = ThreadPoolExecutor(max_workers=2)
         # URL du serveur bootstrap (corrigé en HTTPS)
         self.bootstrap_url = "https://bootstrap.nexachat.tech/upNodes" # <- Corrigé ici
+        self.client_pubkey = {}
+        self.db_co = sqlite3.connect(f"node_{self.port}_messages.db", check_same_thread=False)
+        self._init_db()
+
+
+    def _init_db(self):
+        with self.db_co:
+            self.db_co.execute('''
+                CREATE TABLE IF NOT EXISTS pending_messages (
+                    id TEXT PRIMARY KEY,
+                    sender TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    encrypted_message TEXT NOT NULL,
+                    expiration_time TEXT
+                )
+            ''')
 
     # --- (Le reste des méthodes handle_client, send_to_clients, send_to_nodes reste pareil) ---
     async def handle_client(self, websocket):
@@ -41,9 +58,18 @@ class Node:
 
                 # Traitement des messages de contrôle
                 if "register;client;" in message:
-                    with self.lock:
-                        self.client_connections.add(websocket)
-                        print(f"Client {remote_address} enregistré.")
+                    parts = message.split(';')
+                    if len(parts) >= 4:
+                        pseudo = parts[2]
+                        pubkey = parts[3]
+                        with self.lock:
+                            self.client_connections.add(websocket)
+                            self.client_pubkey[pubkey] = websocket
+                            print(f"Client {remote_address} enregistré avec pseudo '{pseudo}' et pubkey {pubkey[:10]}...")
+                            print(self.client_pubkey)
+                    else:
+                        print(f"Format de registre client invalide reçu: {message}")
+
 
                 elif "register;node;" in message:
                     # Enregistrement d'un nouveau nœud via connexion directe
@@ -596,58 +622,10 @@ class Node:
                  self.loop.close()
             print("Nœud arrêté proprement.")
 
-
-# --- (La partie HTTP Server reste la même) ---
-class StatusHTTPRequestHandler(BaseHTTPRequestHandler):
-    # Rendre l'instance du noeud accessible au handler
-    node_instance = None
-
-    def do_GET(self):
-        if self.path == '/status':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.send_header('Content-Length', '2')
-            self.end_headers()
-            self.wfile.write(b'OK')
-        # Ajout pour voir la liste des noeuds connus (pour le debug)
-        elif self.path == '/nodes':
-             if StatusHTTPRequestHandler.node_instance:
-                 self.send_response(200)
-                 self.send_header('Content-Type', 'application/json')
-                 self.end_headers()
-                 list_copy = []
-                 # Accéder à la liste de manière thread-safe via le lock du noeud
-                 with StatusHTTPRequestHandler.node_instance.lock:
-                     list_copy = list(StatusHTTPRequestHandler.node_instance.nodeIpPort_list) # Copier la liste
-                 self.wfile.write(json.dumps(list_copy).encode('utf-8'))
-             else:
-                 self.send_error(503, "Node instance not available")
-        else:
-            self.send_error(404)
-
-def run_http_server(node_ref):
-    # Passer l'instance du noeud au handler HTTP
-    StatusHTTPRequestHandler.node_instance = node_ref
-    httpd = HTTPServer(('0.0.0.0', 8080), StatusHTTPRequestHandler)
-    print("Serveur HTTP (endpoints /status, /nodes) démarré sur le port 8080.\n")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass # Permet l'arrêt propre via Ctrl+C
-    finally:
-        httpd.server_close() # Fermer le socket du serveur HTTP
-        print("Serveur HTTP arrêté.")
-
-
 if __name__ == "__main__":
     # Créer l'instance du nœud
     node = Node('0.0.0.0', 9102)
     #node.nodeIpPort_list.append(["10.66.66.4", 9102])		# Pour tests
-
-    # Démarrer le serveur HTTP dans un thread séparé en lui passant la référence du noeud
-    http_thread = threading.Thread(target=run_http_server, args=(node,), daemon=True)
-    http_thread.start()
-
     # Démarrer le nœud principal (bloquant jusqu'à Ctrl+C)
     node.start()
 
