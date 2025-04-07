@@ -27,13 +27,30 @@ class Client:
 		self.port = port
 		try:
 			with open("privkey.key", "r") as f:
-				self.privKey = f.readline().strip()
-				self.pubKey = f.readline().strip()
-		except FileNotFoundError:
+				content = f.read().strip()
+				if not content:											# Si le fichier ne contient aucune clé
+					self.keys = generate_eth_key()
+					self.privKey = self.keys.to_hex()
+					self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
+					with open("privkey.key", "w") as f2:
+						f2.write(self.privKey + "\n" + self.pubKey)
+				else:
+					lines = content.splitlines()
+					if len(lines) == 2:
+						self.privKey = lines[0]
+						self.pubKey = lines[1]
+					else:												# Si le fichier n'a qu'une seule clé'
+						print("Format de fichier de clés incorrect, régénération...")
+						self.keys = generate_eth_key()
+						self.privKey = self.keys.to_hex()
+						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
+						with open("privkey.key", "w") as f2:
+							f2.write(self.privKey + "\n" + self.pubKey)
+		except FileNotFoundError:											# Si le fichier n'existe pas
+			self.keys = generate_eth_key()
+			self.privKey = self.keys.to_hex()
+			self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 			with open("privkey.key", "w") as f:
-				self.keys = generate_eth_key()
-				self.privKey = self.keys.to_hex()
-				self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 				f.write(self.privKey + "\n" + self.pubKey)
         
 		self.seen_messages = set()	# Cache pour éviter d'afficher les messages dupliqués
