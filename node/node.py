@@ -422,9 +422,14 @@ class Node:
 
                     if ttl > 0:
                         next_message = f"{sender};{content};{recipient};{msg_id};{ttl}"
-                        # Propager aux clients et aux AUTRES noeuds (exclure celui qui vient d'envoyer)
-                        await self.send_to_clients(next_message) # Envoyer à tous les clients
-                        await self.send_to_nodes(next_message, websocket) # Envoyer aux autres noeuds
+
+                        # Envoi direct
+                        recipient_ws = self.client_pubkey.get(recipient)
+                        if recipient_ws and recipient_ws in self.client_connections:
+                            await recipient_ws.send(next_message)
+                        else:
+                            # Sinon, propager aux autres noeuds
+                            await self.send_to_nodes(next_message, websocket if websocket in self.node_connections else None)
 
                 except ValueError:
                     print(f"Erreur: TTL invalide dans le message '{message}' (process_incoming)")

@@ -216,5 +216,5 @@ class Client:
 if __name__ == "__main__":
 	async_getnodes()  						# Tests en localhost
 	#cli = Client('10.66.66.5', 9102)		# Tests en localhost
-	cli = Client('5.22.213.59', 9102)				# "auto" pour se connecter aléatoirement à un noeud
+	cli = Client('auto', 9102)				# "auto" pour se connecter aléatoirement à un noeud
 	cli.start()
