@@ -6,6 +6,9 @@ from ecies.utils import generate_eth_key
 available_nodes = []
 
 def get_nodes():
+	'''
+	récupère la liste des noeuds sur le bootstrap
+	'''
 	url = "https://bootstrap.nexachat.tech/upNodes"
 	response = requests.get(url)
 	response.raise_for_status()
@@ -13,22 +16,33 @@ def get_nodes():
 	return nodes
 
 def async_getnodes(interval=60):
+	'''
+	éxécute la fonction get_nodes toutes les 60 sec
+	'''
 	global available_nodes
 	available_nodes = get_nodes()
 	if len(available_nodes) == 0:
 		print("Aucun noeud en ligne.")
-	#else:
-	#	print(f"\nMise à jour des noeuds : {available_nodes}")				# Affiche les nœuds en ligne
 	threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
-	def __init__(self, host: str, port: int):
+	def __init__(self, host: str, port: int = 0):
+		'''
+		initialise le client, stock dans ses attributs :
+		- le port du noeud auquel on veut se connecter
+		- l'ip du noeud auquel on veut se connecter
+
+		- notre clé privée
+		- notre clé publique
+
+		enregistre dans le fichier privkey.key nos clés
+		'''
 		self.host = host
 		self.port = port
 		try:
 			with open("privkey.key", "r") as f:
 				content = f.read().strip()
-				if not content:											# Si le fichier ne contient aucune clé
+				if not content:
 					self.keys = generate_eth_key()
 					self.privKey = self.keys.to_hex()
 					self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
@@ -39,29 +53,32 @@ class Client:
 					if len(lines) == 2:
 						self.privKey = lines[0]
 						self.pubKey = lines[1]
-					else:												# Si le fichier n'a qu'une seule clé'
+					else:
 						print("Format de fichier de clés incorrect, régénération...")
 						self.keys = generate_eth_key()
 						self.privKey = self.keys.to_hex()
 						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 						with open("privkey.key", "w") as f2:
 							f2.write(self.privKey + "\n" + self.pubKey)
-		except FileNotFoundError:										# Si le fichier n'existe pas
+		except FileNotFoundError:
 			self.keys = generate_eth_key()
 			self.privKey = self.keys.to_hex()
 			self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 			with open("privkey.key", "w") as f:
 				f.write(self.privKey + "\n" + self.pubKey)
         
-		self.seen_messages = set()	# Cache pour éviter d'afficher les messages dupliqués
-		self.quitting = False 		# Permet de fermer la connexion avec 'quit'
+		self.seen_messages = set()
+		self.quitting = False
         
 		self.loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(self.loop)
 		self.websocket = None
 		
 	async def receive_messages(self):
-		"""Gère la réception des messages en continu"""
+		'''
+		gère la réception des messages en continu,
+		essaie de les déchiffrer, s'il y arrive, affiche le message, sinon, ne fait rien
+		'''
 		try:
 			async for message in self.websocket:
 				if not message:
@@ -76,18 +93,18 @@ class Client:
 						msg_id = parts[3] if len(parts) > 3 else None
 						
 						if msg_id and msg_id in self.seen_messages:
-							continue  # Ignore les messages déjà vus
+							continue
 						
 						if msg_id:
 							self.seen_messages.add(msg_id)
 							
 							if len(self.seen_messages) > 1000:
-								self.seen_messages.pop()  # Limite la taille du cache
+								self.seen_messages.pop()
 						
-						msg = decrypt(self.privKey, bytes.fromhex(content))  # Déchiffrement du message
+						msg = decrypt(self.privKey, bytes.fromhex(content))
 						if str(msg).startswith("b'") and str(msg).endswith("'"):
 							msg = ast.literal_eval(str(msg)).decode()
-							new_msg = ""  # Message avec des "'" au lieu des "¤"
+							new_msg = ""
 							for lettre in msg:
 								if lettre == "¤":
 									new_msg += "'"
@@ -104,7 +121,15 @@ class Client:
 				print(f'Erreur lors de la réception du message. ("{e}")')
 	
 	async def connect_and_send(self):
-		"""Établit une connexion WebSocket et gère l'envoi de messages"""
+		'''
+		établit une connection websocket avec le noeud et envoie les messages
+
+		plusieurs fonctionnalités disponibles :
+		- quit : ferme l'application
+		- copy : copie la clé publique
+
+		chiffre les messages avant de les envoyer
+		'''
 		host = self.host
 		port = self.port
 		
@@ -129,10 +154,9 @@ class Client:
 						self.quitting = True
 						print("Fermeture du programme...\n")
 						
-						# Détermine l'OS et ferme le programme
 						if platform.system() == "Windows":
 							os.system("taskkill /F /PID " + str(os.getppid()))
-						else:  														# Systèmes Linux/Unix
+						else:
 							os.kill(os.getpid(), signal.SIGTERM)
 							sys.exit(0)
 						
@@ -142,15 +166,12 @@ class Client:
 				print("\n=========================={ Connecté au serveur }============================")
 				print(f"\nTa clé publique : {self.pubKey}")
 				
-				# Démarrer une tâche pour recevoir les messages
 				receive_task = asyncio.create_task(self.receive_messages())
 				
-				# Boucle pour envoyer des messages
 				while True:
-					# Utiliser asyncio.to_thread pour les opérations bloquantes comme input()
 					msg = await asyncio.to_thread(input, "")
 					
-					new_msg = ""  # Message avec des "¤" au lieu des apostrophes
+					new_msg = ""
 					for lettre in msg:
 						if lettre == "'":
 							new_msg += "¤"
@@ -161,12 +182,11 @@ class Client:
 						self.quitting = True
 						print("Fermeture du programme...\n")
 						
-						receive_task.cancel()										# Annuler la tâche de réception des messages
+						receive_task.cancel()
 						
-						# Détermine l'OS et ferme le programme
 						if platform.system() == "Windows":
 							os.system("taskkill /F /PID " + str(os.getppid()))
-						else:  														# Systèmes Linux/Unix
+						else:
 							os.kill(os.getpid(), signal.SIGTERM)
 							sys.exit(0)
 
@@ -175,7 +195,6 @@ class Client:
 						print("Ta clé publique a bien été copiée.")
 						continue
 					
-					# Deuxième boucle pour obtenir une clé publique valide
 					while True:
 						to = await asyncio.to_thread(input, "Clé du destinataire : ")
 						if to == 'copy':
@@ -187,7 +206,7 @@ class Client:
 							try:
 								msgEncrypt = encrypt(to, new_msg.encode())
 								await websocket.send(f"{pseudo};{msgEncrypt.hex()};{to};{msg_id}")
-								break  # Sortir de la boucle si la clé est valide
+								break
 							except Exception as e:
 								print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
 		
@@ -197,24 +216,24 @@ class Client:
 			print(f'Erreur de connexion au serveur. ("{e}")')
 	
 	def start(self):
-		"""Démarre le client"""
+		'''
+		démarre le client
+		'''
 		try:
 			self.loop.run_until_complete(self.connect_and_send())
 		except KeyboardInterrupt:
 			self.quitting = True
 			print("\nFermeture du programme...\n")
 
-			# Détermine l'OS et ferme le programme
 			if platform.system() == "Windows":
 				os.system("taskkill /F /PID " + str(os.getppid()))
-			else:  														# Systèmes Linux/Unix
+			else:
 				os.kill(os.getpid(), signal.SIGTERM)
 			sys.exit(0)
 		finally:
 			self.loop.close()
 
 if __name__ == "__main__":
-	async_getnodes()  						# Tests en localhost
-	#cli = Client('10.66.66.5', 9102)		# Tests en localhost
-	cli = Client('auto', 9102)				# "auto" pour se connecter aléatoirement à un noeud
+	async_getnodes()
+	cli = Client('auto')				# "auto" pour se connecter aléatoirement à un noeud
 	cli.start()
