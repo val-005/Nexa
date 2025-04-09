@@ -1,3 +1,4 @@
+ttkthemes
 eciespy
 eth-keys
 requests
