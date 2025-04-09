@@ -114,7 +114,7 @@ class Node:
                 elif message != "register;":
                     parts = message.split(';')
 
-                    if len(parts) <= 4:e
+                    if len(parts) <= 4:
                         msg_id = str(uuid.uuid4())
                         if len(parts) >= 3:
                             message = f"{parts[0]};{parts[1]};{parts[2]};{msg_id};{self.DEFAULT_TTL}"
