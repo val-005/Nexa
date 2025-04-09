@@ -11,19 +11,23 @@ export const getNodes = async () => {
     return [];
   }
 };
+export const connectToNode = (nodeAddress, pseudo, pubKey) => {
+  return new Promise((resolve) => {
+    console.log(`Tentative de connexion à : ws://${nodeAddress}`);
+    const socket = new WebSocket(`ws://${nodeAddress}`);
 
-export const connectToNode = (onMessageReceived, pseudo) => {
-  console.log(`Tentative de connexion à : ws://94.237.117.108:9102`);
-  const socket = new WebSocket(`ws://94.237.117.108:9102`);
+    socket.onopen = () => {
+      console.log("Connecté au noeud :", nodeAddress);
+      const registrationMsg = `register;client;${pseudo};${pubKey}`;
+      socket.send(registrationMsg);
+      resolve({ socket, success: true });
+    };
 
-  socket.onopen = () => {
-    console.log("Connecté au noeud :", "94.237.117.108");
-    const registrationMsg = `register;client;${pseudo}`;
-    socket.send(registrationMsg);
-  };
+    socket.onerror = (error) => {
+      console.error("Erreur WebSocket :", error);
+      resolve({ socket: null, success: false });
+    };
 
-  socket.onerror = (error) => console.error("Erreur WebSocket :", error);
-  socket.onclose = (event) => console.log("Connexion fermée:", event.code, event.reason);
-
-  return socket;
+    socket.onclose = (event) => console.log("Connexion fermée:", event.code, event.reason);
+  });
 };
