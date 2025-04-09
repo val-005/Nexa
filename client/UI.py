@@ -4,10 +4,39 @@ from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
+import locale
+
+# Définir la locale en français
+try:
+    locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_TIME, 'fr_FR')
+    except:
+        try:
+            locale.setlocale(locale.LC_TIME, 'fra_fra')
+        except:
+            pass  # Garder la locale par défaut si impossible de définir le français
 
 # Variables globales
 available_nodes = []
 node_detection_callback = None
+app = None  # Variable globale pour stocker l'instance de l'application
+
+# Gestionnaire de signal pour Ctrl+C
+def signal_handler(sig, frame):
+    global app
+    #print("\nFermeture du programme via Ctrl+C...")
+    if app:
+        app.destroy()
+    if platform.system() == "Windows":
+        os.system("taskkill /F /PID " + str(os.getppid()))
+    else:
+        os.kill(os.getpid(), signal.SIGTERM)
+    sys.exit(0)
+
+# Configurer le gestionnaire de signal
+signal.signal(signal.SIGINT, signal_handler)
 
 def get_nodes():
     '''
@@ -162,15 +191,19 @@ class Client:
                 else:
                     new_msg += lettre
 
-            # Vérifier que la clé du destinataire est en hexadécimal
+            # Vérifier que la clé du destinataire est valide
             if not self.verify_key(recipient_key):
-                messagebox.showerror("Erreur", "Veuillez entrer une clé publique valide avant d'envoyer un message.")
+                print("Erreur: Veuillez entrer une clé publique valide avant d'envoyer un message.")
                 return False
 
-            # Chiffrer et envoyer
+            # Chiffrer et envoyer immédiatement (sans délai)
             msg_id = str(uuid.uuid4())
             msgEncrypt = encrypt(recipient_key, new_msg.encode())
             await self.websocket.send(f"{pseudo};{msgEncrypt.hex()};{recipient_key};{msg_id}")
+            
+            # Auto-feedback pour l'émetteur (simule la réception de son propre message avec "Vous:" au lieu du pseudo)
+            print(f"Vous: {message}")
+            
             return True
 
         except Exception as e:
@@ -215,26 +248,65 @@ class Client:
                 
                 receive_task = asyncio.create_task(self.receive_messages())
                 
+                # File d'attente pour les messages à envoyer
+                message_queue = asyncio.Queue()
+                
+                # Tâche qui consomme les messages de la file d'attente et les envoie
+                async def message_processor():
+                    while True:
+                        try:
+                            # Récupérer un message de la file d'attente
+                            msg_data = await message_queue.get()
+                            message, recipient_key = msg_data
+                            
+                            # Formater le message
+                            new_msg = ""
+                            for lettre in message:
+                                if lettre == "'":
+                                    new_msg += "¤"
+                                else:
+                                    new_msg += lettre
+
+                            # Chiffrer et envoyer
+                            msg_id = str(uuid.uuid4())
+                            msgEncrypt = encrypt(recipient_key, new_msg.encode())
+                            await websocket.send(f"{pseudo};{msgEncrypt.hex()};{recipient_key};{msg_id}")
+                            
+                            # Feedback pour l'émetteur
+                            print(f"Vous: {message}")
+                            
+                            # Marquer cette tâche comme terminée
+                            message_queue.task_done()
+                            
+                            # Petite pause pour éviter de surcharger le serveur
+                            await asyncio.sleep(0.01)
+                            
+                        except Exception as e:
+                            print(f"Erreur lors de l'envoi: {str(e)}")
+                            message_queue.task_done()
+                
+                # Démarrer la tâche de traitement des messages
+                processor_task = asyncio.create_task(message_processor())
+                
                 while True:
                     # Si un message et une clé ont été définis par l'interface
                     if self.message_to_send and self.recipient_key:
-                        # Essayer d'envoyer le message avec la clé fournie
-                        success = await self.send_message_with_key(
-                            self.message_to_send,
-                            self.recipient_key,
-                            pseudo
-                        )
-                        # Réinitialiser les variables après l'envoi
+                        msg = self.message_to_send
+                        key = self.recipient_key
+                        
+                        # Réinitialiser les variables après capture
                         self.message_to_send = None
                         self.recipient_key = None
                         
-                        if not success:
-                            # Au lieu d'afficher l'erreur dans la console, nous l'envoyons à la redirectio
-                            # qui s'occupera de l'afficher en popup
-                            print("Erreur: Échec de l'envoi du message. Vérifiez la clé du destinataire.")
+                        # Vérifier que la clé est valide
+                        if self.verify_key(key):
+                            # Ajouter à la file d'attente au lieu d'envoyer directement
+                            await message_queue.put((msg, key))
+                        else:
+                            print("Erreur: Clé du destinataire invalide.")
                     
                     # Pause pour éviter une boucle infinie trop rapide
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.05)
         
         except websockets.exceptions.ConnectionClosed:
             print("Erreur: Connexion fermée par le serveur.")
@@ -328,20 +400,42 @@ class MessageRedirect:
                         # Traitement normal des messages
                         self.text_widget.config(state=tk.NORMAL)
 
-                        if ": " in string and not any(string.startswith(x) for x in ("===", "Ta clé", "Connexion")):
-                            sender, message = string.split(": ", 1)
-                            time_str = datetime.now().strftime("%H:%M")
-
-                            if sender.strip() == self.pseudo.strip():
-                                self.text_widget.insert(tk.END, f"Vous {time_str}\n", "sender_name")
-                                self.text_widget.insert(tk.END, f"{' ' * 50}{message.strip()}\n", "message_sent")
-                            else:
-                                self.text_widget.insert(tk.END, f"{sender} {time_str}\n", "sender_name")
-                                self.text_widget.insert(tk.END, f"{message.strip()}\n", "message_received")
-                        else:
-                            # Filtrer les messages d'erreur pour ne pas les afficher dans le chat
-                            if not ("erreur" in string.lower() or "error" in string.lower()):
+                        # Supprimer les retours à la ligne superflus
+                        string = string.rstrip()
+                        
+                        # Format spécial pour les messages envoyés/reçus
+                        if ": " in string and not any(x in string for x in ("===", "Ta clé", "Connexion")):
+                            try:
+                                # Extraction du message et du destinataire
+                                parts = string.split(": ", 1)
+                                
+                                if len(parts) >= 2:
+                                    sender, message = parts[0], parts[1]
+                                    time_str = datetime.now().strftime("%H:%M")
+                                    
+                                    # Message envoyé ou reçu
+                                    if sender.strip() == self.pseudo.strip():
+                                        self.text_widget.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
+                                        self.text_widget.insert(tk.END, f"{message.strip()}", "message_sent")
+                                        #print(f"DEBUG: Message envoyé traité: '{message.strip()}'", file=self.original_stdout)
+                                    else:
+                                        self.text_widget.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
+                                        self.text_widget.insert(tk.END, f"{message.strip()}", "message_received")
+                                    
+                                    # Ajouter un seul retour à la ligne pour tous les messages
+                                    self.text_widget.insert(tk.END, "\n", "")
+                            except Exception as e:
+                                print(f"DEBUG: Erreur format message: {e}", file=self.original_stdout)
                                 self.text_widget.insert(tk.END, string)
+                                # Ne pas ajouter de \n supplémentaire ici
+                        else:
+                            # Messages système (garder compact)
+                            if not ("erreur" in string.lower() or "error" in string.lower()):
+                                string = string.strip()  # Éliminer tous les espaces et retours à la ligne superflus
+                                if string:  # Ne pas insérer de lignes vides
+                                    self.text_widget.insert(tk.END, string, "system_message")
+                                    # Ajouter un seul retour à la ligne
+                                    self.text_widget.insert(tk.END, "\n", "")
 
                         self.text_widget.config(state=tk.DISABLED)
                         self.text_widget.see(tk.END)  # Défilement automatique vers le bas
@@ -639,84 +733,48 @@ class NexaInterface(tk.Tk):
         
         # Configurer les tags pour les messages avec des styles améliorés
         self.chat_text.tag_configure("message_sent", 
-                                    background="#E6F9E6",  # Vert clair
-                                    foreground="black",
                                     font=('Segoe UI', 11),
-                                    spacing1=6,
-                                    spacing2=4,
-                                    spacing3=6,
-                                    justify='right',  # Alignement à droite pour les messages envoyés
-                                    lmargin1=5,  # Marge à gauche réduite à 5
-                                    lmargin2=5)  # Marge à gauche réduite à 5
-        
+                                    spacing1=0,  # Réduit à 0
+                                    spacing2=0,  # Réduit à 0
+                                    spacing3=0,  # Réduit à 0
+                                    lmargin1=5,
+                                    lmargin2=5,
+                                    foreground="black")  # Couleur noire pour les messages
+
         # Tag pour centrer les messages système comme la date
         self.chat_text.tag_configure("system_message_center", 
                                     foreground="#757575",
                                     font=('Segoe UI', 9),
                                     justify='center',
-                                    spacing1=6,
-                                    spacing2=4,
-                                    spacing3=6)
+                                    spacing1=2,  # Réduit
+                                    spacing2=0,  # Réduit à 0
+                                    spacing3=2)  # Réduit
         
         self.chat_text.tag_configure("message_received", 
-                                    background="#F1F0FE",  # Violet très clair
-                                    foreground="black",
                                     font=('Segoe UI', 11),
-                                    spacing1=6,
-                                    spacing2=4,
-                                    spacing3=6,
-                                    justify='left',  # Alignement à gauche pour les messages reçus
-                                    lmargin1=5,  # Marge à gauche de 5
-                                    lmargin2=5)  # Marge à gauche de 5
+                                    spacing1=0,  # Réduit à 0
+                                    spacing2=0,  # Réduit à 0
+                                    spacing3=0,  # Réduit à 0
+                                    lmargin1=5,
+                                    lmargin2=5,
+                                    foreground="black")  # Couleur noire pour les messages
         
         self.chat_text.tag_configure("sender_name", 
-                                    foreground=self.primary_color,
                                     font=('Segoe UI', 10, 'bold'),
                                     justify='left',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
+                                    lmargin1=5,
+                                    lmargin2=5,
+                                    foreground=self.primary_color)  # Couleur pour les noms
         
         self.chat_text.tag_configure("system_message", 
                                     foreground="#757575",
                                     font=('Segoe UI', 9),
                                     justify='left',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
-        
-        self.chat_text.tag_configure("system_success", 
-                                    foreground=self.accent_color,
-                                    font=('Segoe UI', 9, 'bold'),
-                                    justify='left',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
-        
-        self.chat_text.tag_configure("system_error", 
-                                    foreground=self.error_color,
-                                    font=('Segoe UI', 9),
-                                    justify='left',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
-        
-        self.chat_text.tag_configure("system_prompt", 
-                                    foreground=self.secondary_color,
-                                    font=('Segoe UI', 9, 'bold'),
-                                    justify='left',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
-        
-        self.chat_text.tag_configure("time_left", 
-                                    foreground="#9E9E9E",
-                                    font=('Segoe UI', 8),
-                                    justify='left',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
-        
-        self.chat_text.tag_configure("time_right", 
-                                    foreground="#9E9E9E",
-                                    font=('Segoe UI', 8),
-                                    justify='right',
-                                    lmargin1=5,  # Marge à gauche
-                                    lmargin2=5)  # Marge à gauche pour les lignes suivantes
+                                    spacing1=1,  # Réduit à 1
+                                    spacing2=0,  # Réduit à 0
+                                    spacing3=1,  # Réduit à 1
+                                    lmargin1=5,
+                                    lmargin2=5)
         
         # Zone de destinataire
         dest_frame = ttk.Frame(self.chat_frame, padding=10)
@@ -824,7 +882,7 @@ class NexaInterface(tk.Tk):
         self.connected = True
 
         # Afficher la date au centre
-        current_date = datetime.now().strftime("%d %m %Y")
+        current_date = datetime.now().strftime("%A %d %B %Y")
         self.chat_text.config(state=tk.NORMAL)
         self.chat_text.insert(tk.END, "\n", "system_message")
         self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
