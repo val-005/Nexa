@@ -47,6 +47,46 @@ class Node:
                 )
             ''')
 
+    async def sendMessagesDB(self, websocket):
+        # Identifier le pubkey associé à ce websocket
+        client_pub = None
+        for pub, ws in self.client_pubkey.items():
+            if ws == websocket:
+                client_pub = pub
+                break
+
+        if not client_pub:
+            return  # Pas de pubkey trouvée, le client n'est pas reconnu
+
+        # Récupérer les messages en attente destinés à ce client
+        cursor = self.db_co.cursor()
+        cursor.execute(
+            "SELECT id, sender, encrypted_message, expiration_time FROM pending_messages WHERE recipient = ?",
+            (client_pub,)
+        )
+        messages = cursor.fetchall()
+
+        if not messages:
+            return  # Aucun message en attente
+
+        for msg in messages:
+            msg_id, sender, encrypted_message, expiration_time = msg
+            # Construire le message au format "sender;contenu;recipient;id;TTL"
+            # On utilise self.DEFAULT_TTL pour le TTL
+            msg_text = f"{sender};{encrypted_message};{client_pub};{msg_id};{self.DEFAULT_TTL}"
+            try:
+                await websocket.send(msg_text)
+            except Exception as e:
+                print(f"Erreur lors de l'envoi du message {msg_id}: {e}")
+
+        # Supprimer les messages envoyés de la base de données
+        with self.db_co:
+            self.db_co.execute(
+                "DELETE FROM pending_messages WHERE recipient = ?",
+                (client_pub,)
+            )
+        
+
     async def handle_client(self, websocket):
         '''
         Gère :
@@ -73,6 +113,7 @@ class Node:
                         with self.lock:
                             self.client_connections.add(websocket)
                             self.client_pubkey[pubkey] = websocket
+                            await self.sendMessagesDB(websocket)
                             print(f"Client {remote_address} enregistré avec pseudo '{pseudo}' et pubkey {pubkey[:10]}...")
                             print(self.client_pubkey)
                     else:
@@ -134,12 +175,18 @@ class Node:
                             self.message_cache.append(msg_id)
                             ttl -= 1
 
-                            if ttl > 0:
-                                next_message = f"{sender};{content};{recipient};{msg_id};{ttl}"
-
-                                await self.send_to_clients(next_message, websocket if websocket in self.client_connections else None)
-
-                                await self.send_to_nodes(next_message, websocket if websocket in self.node_connections else None)
+                            next_message = f"{sender};{content};{recipient};{msg_id};{ttl}"
+                            
+                            recipient_ws = self.client_pubkey.get(recipient)
+                            if recipient_ws and recipient_ws in self.client_connections:
+                                await recipient_ws.send(next_message)
+                            else:
+                                with self.db_co:
+                                    self.db_co.execute(
+                                        "INSERT OR IGNORE INTO pending_messages (id, sender, recipient, encrypted_message, expiration_time) VALUES (?, ?, ?, ?, ?)",
+                                        (msg_id, sender, recipient, content, None)
+                                    )
+                                self.db_co.commit()
 
                         except ValueError:
                             print(f"Erreur: TTL invalide dans le message '{message}'")
@@ -351,15 +398,18 @@ class Node:
                     self.message_cache.append(msg_id)
                     ttl -= 1
 
-                    if ttl > 0:
-                        next_message = f"{sender};{content};{recipient};{msg_id};{ttl}"
-
-                        # Envoi direct
-                        recipient_ws = self.client_pubkey.get(recipient)
-                        if recipient_ws and recipient_ws in self.client_connections:
-                            await recipient_ws.send(next_message)
-                        else:
-                            await self.send_to_nodes(next_message, websocket if websocket in self.node_connections else None)
+                    next_message = f"{sender};{content};{recipient};{msg_id};{ttl}"
+                    
+                    recipient_ws = self.client_pubkey.get(recipient)
+                    if recipient_ws and recipient_ws in self.client_connections:
+                        await recipient_ws.send(next_message)
+                    else:
+                        with self.db_co:
+                            self.db_co.execute(
+                                "INSERT OR IGNORE INTO pending_messages (id, sender, recipient, encrypted_message, expiration_time) VALUES (?, ?, ?, ?, ?)",
+                                (msg_id, sender, recipient, content, None)
+                            )
+                        self.db_co.commit()
 
                 except ValueError:
                     print(f"Erreur: TTL invalide dans le message '{message}' (process_incoming)")
