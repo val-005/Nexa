@@ -590,7 +590,7 @@ class NexaInterface(tk.Tk):
             pass  # Pas d'icône disponible
         
         # Open (or create) the message database and table
-        self.msg_db = sqlite3.connect(r"c:\Users\crist\Desktop\dev\Nexa\message.db", check_same_thread=False)
+        self.msg_db = sqlite3.connect(r"./message.db", check_same_thread=False)
         self.msg_cursor = self.msg_db.cursor()
         self.msg_cursor.execute('''
             CREATE TABLE IF NOT EXISTS messages (
