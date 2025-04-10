@@ -1,4 +1,5 @@
 import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal
+import sqlite3
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -73,6 +74,11 @@ class Client:
 		self.loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(self.loop)
 		self.websocket = None
+
+		self.db = sqlite3.connect("contacts.db")
+		self.cursor = self.db.cursor()
+		self.cursor.execute("CREATE TABLE IF NOT EXISTS contacts (pseudo TEXT PRIMARY KEY, pubkey TEXT)")
+		self.db.commit()
 		
 	async def receive_messages(self):
 		'''
@@ -97,7 +103,6 @@ class Client:
 						
 						if msg_id:
 							self.seen_messages.add(msg_id)
-							
 							if len(self.seen_messages) > 1000:
 								self.seen_messages.pop()
 						
@@ -165,11 +170,47 @@ class Client:
 				
 				print("\n=========================={ Connecté au serveur }============================")
 				print(f"\nTa clé publique : {self.pubKey}")
+
+				def list_contacts():
+					self.cursor.execute("SELECT pseudo, pubkey FROM contacts")
+					rows = self.cursor.fetchall()
+					if not rows:
+						print("Aucun contact enregistré.")
+					else:
+						print("\n{ Contacts enregistrés }")
+						for pseudo, pubkey in rows:
+							print(f"{pseudo} : {pubkey}")
+						print()
+
+				def add_contact():
+					pseudo = input("Entrer un pseudo : ").strip()
+					pubkey = input("Entrer la clé publique : ").strip()
+					if not pseudo or not pubkey:
+						print("Pseudo ou clé publique manquant.")
+						return
+					try:
+						self.cursor.execute("INSERT INTO contacts (pseudo, pubkey) VALUES (?, ?)", (pseudo, pubkey))
+						self.db.commit()
+						print("Contact ajouté.")
+					except sqlite3.IntegrityError:
+						print("Ce pseudo existe déjà.")
 				
 				receive_task = asyncio.create_task(self.receive_messages())
 				
 				while True:
 					msg = await asyncio.to_thread(input, "")
+					if msg == "contacts":
+						while True:
+							cmd = await asyncio.to_thread(input, "voir / ajouter / retour : ")
+							if cmd == "voir":
+								list_contacts()
+							elif cmd == "ajouter":
+								add_contact()
+							elif cmd == "retour":
+								break
+							else:
+								print("Commande inconnue.")
+						continue
 					
 					new_msg = ""
 					for lettre in msg:
@@ -181,9 +222,7 @@ class Client:
 					if msg == 'quit':
 						self.quitting = True
 						print("Fermeture du programme...\n")
-						
 						receive_task.cancel()
-						
 						if platform.system() == "Windows":
 							os.system("taskkill /F /PID " + str(os.getppid()))
 						else:
@@ -194,21 +233,22 @@ class Client:
 						pyperclip.copy(self.pubKey)
 						print("Ta clé publique a bien été copiée.")
 						continue
-					
-					while True:
-						to = await asyncio.to_thread(input, "Clé du destinataire : ")
-						if to == 'copy':
-							pyperclip.copy(self.pubKey)
-							print("Ta clé publique a bien été copiée.")
-							continue
-						else:
-							msg_id = str(uuid.uuid4())
-							try:
-								msgEncrypt = encrypt(to, new_msg.encode())
-								await websocket.send(f"{pseudo};{msgEncrypt.hex()};{to};{msg_id}")
-								break
-							except Exception as e:
-								print(f'Erreur : tu as mal entré la clé publique. ("{e}")')
+
+					to = await asyncio.to_thread(input, "Clé du destinataire ou pseudo : ")
+					self.cursor.execute("SELECT pubkey FROM contacts WHERE pseudo = ?", (to,))
+					result = self.cursor.fetchone()
+					if result:
+						to = result[0]
+					elif not (len(to) == 66 and to.startswith("0x")):
+						print("Aucun contact trouvé et ce n’est pas une clé publique valide.")
+						continue
+
+					msg_id = str(uuid.uuid4())
+					try:
+						msgEncrypt = encrypt(to, new_msg.encode())
+						await websocket.send(f"{pseudo};{msgEncrypt.hex()};{to};{msg_id}")
+					except Exception as e:
+						print(f"Erreur de chiffrement/envoi : {e}")
 		
 		except websockets.exceptions.ConnectionClosed:
 			print("Connexion fermée par le serveur.")
@@ -224,13 +264,13 @@ class Client:
 		except KeyboardInterrupt:
 			self.quitting = True
 			print("\nFermeture du programme...\n")
-
 			if platform.system() == "Windows":
 				os.system("taskkill /F /PID " + str(os.getppid()))
 			else:
 				os.kill(os.getpid(), signal.SIGTERM)
 			sys.exit(0)
 		finally:
+			self.db.close()
 			self.loop.close()
 
 if __name__ == "__main__":
