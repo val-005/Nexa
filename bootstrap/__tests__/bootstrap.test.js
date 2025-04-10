@@ -1,3 +1,4 @@
+// Tests générés automatiquement qui run avec github actions (voir .github/workflows) dès qu'une modifications est faite dans le bootstrap
 const request = require("supertest");
 const { app, checkNodesInterval } = require("../bootstrap.js");
 const sqlite3 = require("sqlite3").verbose();
