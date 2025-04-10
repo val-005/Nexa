@@ -423,7 +423,7 @@ class MessageRedirect:
                         string = string.rstrip()
                         
                         # Format spécial pour les messages envoyés/reçus
-                        if ": " in string and not any(x in string for x in ("===", "Ta clé", "Connexion")):
+                        if ": " in string and not any(x in string for x in ("Ta clé", "Connexion")):
                             try:
                                 # Extraction du message et du destinataire
                                 parts = string.split(": ", 1)
@@ -863,11 +863,12 @@ class NexaInterface(tk.Tk):
             if rows:
                 self.chat_text.config(state=tk.NORMAL)
                 for sender, message, timestamp in rows:
-                    # Format each message (you can adjust formatting as desired)
                     time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
                     self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
                     self.chat_text.insert(tk.END, f"{message}\n", "message_received")
                 self.chat_text.config(state=tk.DISABLED)
+                # Défiler automatiquement vers le bas pour voir les messages les plus récents
+                self.chat_text.see(tk.END)
         except Exception as e:
             print(f"DEBUG: Erreur lors du chargement de l'historique: {e}", file=sys.stdout)
     
