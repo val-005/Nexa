@@ -275,5 +275,5 @@ class Client:
 
 if __name__ == "__main__":
 	async_getnodes()
-	cli = Client('127.0.0.1', 9102)				# "auto" pour se connecter aléatoirement à un noeud
+	cli = Client('auto')				# "auto" pour se connecter aléatoirement à un noeud
 	cli.start()

@@ -5,6 +5,7 @@ from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
 import locale
+import sqlite3
 
 # Définir la locale en français
 try:
@@ -361,12 +362,13 @@ class Client:
 
 # Interface graphique
 class MessageRedirect:
-    def __init__(self, text_widget, pseudo):
+    def __init__(self, text_widget, pseudo, save_message_callback=None):
         self.text_widget = text_widget
         self.pseudo = pseudo
         self.queue = queue.Queue()
         self.original_stdout = sys.stdout
         self.updating = True
+        self.save_message_callback = save_message_callback  # New callback for persisting messages
         self.root = None
         threading.Thread(target=self.update_loop, daemon=True).start()
 
@@ -378,6 +380,18 @@ class MessageRedirect:
             # Débug uniquement, pas d'affichage
             print("DEBUG:", string, file=self.original_stdout)
         else:
+            # For normal chat messages with ": " (sender and message)
+            if ": " in string and not any(x in string for x in ("===", "Ta clé", "Connexion")):
+                try:
+                    parts = string.split(": ", 1)
+                    if len(parts) >= 2:
+                        sender, message = parts[0], parts[1].strip()
+                        # Call callback to store message
+                        if self.save_message_callback:
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            self.save_message_callback(sender, message, timestamp)
+                except Exception as e:
+                    pass
             self.queue.put(("message", string))
 
     def flush(self): pass
@@ -575,8 +589,22 @@ class NexaInterface(tk.Tk):
         except:
             pass  # Pas d'icône disponible
         
+        # Open (or create) the message database and table
+        self.msg_db = sqlite3.connect(r"c:\Users\crist\Desktop\dev\Nexa\message.db", check_same_thread=False)
+        self.msg_cursor = self.msg_db.cursor()
+        self.msg_cursor.execute('''
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender TEXT,
+                message TEXT,
+                timestamp TEXT
+            )
+        ''')
+        self.msg_db.commit()
+        
         # Créer l'interface
         self.create_widgets()
+        self.load_message_history()  # Load history on startup
         
         # Polling des entrées utilisateur toutes les 100ms
         self.after(100, self.check_input_needed)
@@ -822,6 +850,31 @@ class NexaInterface(tk.Tk):
         # Appliquer des coins arrondis aux boutons après le chargement complet
         self.after(10, self.apply_rounded_corners)
     
+    def load_message_history(self):
+        """Charge l'historique des messages stocké dans message.db et les affiche."""
+        try:
+            self.msg_cursor.execute("SELECT sender, message, timestamp FROM messages ORDER BY id")
+            rows = self.msg_cursor.fetchall()
+            if rows:
+                self.chat_text.config(state=tk.NORMAL)
+                for sender, message, timestamp in rows:
+                    # Format each message (you can adjust formatting as desired)
+                    time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
+                    self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
+                    self.chat_text.insert(tk.END, f"{message}\n", "message_received")
+                self.chat_text.config(state=tk.DISABLED)
+        except Exception as e:
+            print(f"DEBUG: Erreur lors du chargement de l'historique: {e}", file=sys.stdout)
+    
+    def save_message(self, sender, message, timestamp):
+        """Sauvegarde un message dans message.db."""
+        try:
+            self.msg_cursor.execute("INSERT INTO messages (sender, message, timestamp) VALUES (?, ?, ?)",
+                                      (sender, message, timestamp))
+            self.msg_db.commit()
+        except Exception as e:
+            print(f"DEBUG: Erreur lors de la sauvegarde du message: {e}", file=sys.stdout)
+    
     def connect(self):
         """Se connecter au serveur"""
         pseudo = self.pseudo.get().strip()
@@ -845,7 +898,7 @@ class NexaInterface(tk.Tk):
                 self.after(0, self.show_chat_interface)
                 
                 # Configurer la redirection et les mocks
-                redirect = MessageRedirect(self.chat_text, pseudo)
+                redirect = MessageRedirect(self.chat_text, pseudo, save_message_callback=self.save_message)
                 
                 self.original_stdout = sys.stdout
                 sys.stdout = redirect
@@ -1114,7 +1167,11 @@ class NexaInterface(tk.Tk):
         return btn_frame
 
     def on_closing(self):
-        """Gère la fermeture de la fenêtre"""
+        """Avant de fermer, on ferme aussi la connexion à la bdd des messages"""
+        try:
+            self.msg_db.close()
+        except:
+            pass
         self.destroy()
         self.quitting = True	
         if platform.system() == "Windows":
