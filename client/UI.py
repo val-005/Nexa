@@ -1,11 +1,12 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal
+import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3
 import queue, time, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
-import locale
-import sqlite3
+
+# Chemin du répertoire du script actuel
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Définir la locale en français
 try:
@@ -84,14 +85,18 @@ class Client:
         '''
         self.host = host
         self.port = port
+        
+        # Chemin absolu pour privkey.key
+        privkey_path = os.path.join(SCRIPT_DIR, "privkey.key")
+        
         try:
-            with open("privkey.key", "r") as f:
+            with open(privkey_path, "r") as f:
                 content = f.read().strip()
                 if not content:
                     self.keys = generate_eth_key()
                     self.privKey = self.keys.to_hex()
                     self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-                    with open("privkey.key", "w") as f2:
+                    with open(privkey_path, "w") as f2:
                         f2.write(self.privKey + "\n" + self.pubKey)
                 else:
                     lines = content.splitlines()
@@ -103,13 +108,13 @@ class Client:
                         self.keys = generate_eth_key()
                         self.privKey = self.keys.to_hex()
                         self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-                        with open("privkey.key", "w") as f2:
+                        with open(privkey_path, "w") as f2:
                             f2.write(self.privKey + "\n" + self.pubKey)
         except FileNotFoundError:
             self.keys = generate_eth_key()
             self.privKey = self.keys.to_hex()
             self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-            with open("privkey.key", "w") as f:
+            with open(privkey_path, "w") as f:
                 f.write(self.privKey + "\n" + self.pubKey)
         
         self.seen_messages = set()
@@ -590,7 +595,7 @@ class NexaInterface(tk.Tk):
             pass  # Pas d'icône disponible
         
         # Open (or create) the message database and table
-        self.msg_db = sqlite3.connect(r"./message.db", check_same_thread=False)
+        self.msg_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "message.db"), check_same_thread=False)
         self.msg_cursor = self.msg_db.cursor()
         self.msg_cursor.execute('''
             CREATE TABLE IF NOT EXISTS messages (

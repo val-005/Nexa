@@ -4,11 +4,14 @@ import sqlite3
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 
+# Chemin du répertoire du script actuel
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 available_nodes = []
 
 def get_nodes():
 	'''
-	récupère la liste des noeuds sur le bootstrap
+	Récupère la liste des noeuds sur le bootstrap
 	'''
 	url = "https://bootstrap.nexachat.tech/upNodes"
 	response = requests.get(url)
@@ -18,7 +21,7 @@ def get_nodes():
 
 def async_getnodes(interval=60):
 	'''
-	éxécute la fonction get_nodes toutes les 60 sec
+	Exécute la fonction get_nodes toutes les 60 secondes
 	'''
 	global available_nodes
 	available_nodes = get_nodes()
@@ -40,14 +43,18 @@ class Client:
 		'''
 		self.host = host
 		self.port = port
+		
+		# Chemin absolu pour privkey.key
+		privkey_path = os.path.join(SCRIPT_DIR, "privkey.key")
+		
 		try:
-			with open("privkey.key", "r") as f:
+			with open(privkey_path, "r") as f:
 				content = f.read().strip()
 				if not content:
 					self.keys = generate_eth_key()
 					self.privKey = self.keys.to_hex()
 					self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-					with open("privkey.key", "w") as f2:
+					with open(privkey_path, "w") as f2:
 						f2.write(self.privKey + "\n" + self.pubKey)
 				else:
 					lines = content.splitlines()
@@ -59,13 +66,13 @@ class Client:
 						self.keys = generate_eth_key()
 						self.privKey = self.keys.to_hex()
 						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-						with open("privkey.key", "w") as f2:
+						with open(privkey_path, "w") as f2:
 							f2.write(self.privKey + "\n" + self.pubKey)
 		except FileNotFoundError:
 			self.keys = generate_eth_key()
 			self.privKey = self.keys.to_hex()
 			self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-			with open("privkey.key", "w") as f:
+			with open(privkey_path, "w") as f:
 				f.write(self.privKey + "\n" + self.pubKey)
         
 		self.seen_messages = set()
@@ -75,7 +82,9 @@ class Client:
 		asyncio.set_event_loop(self.loop)
 		self.websocket = None
 
-		self.db = sqlite3.connect("contacts.db")
+		# Chemin absolu pour contacts.db
+		contacts_db_path = os.path.join(SCRIPT_DIR, "contacts.db")
+		self.db = sqlite3.connect(contacts_db_path)
 		self.cursor = self.db.cursor()
 		self.cursor.execute("CREATE TABLE IF NOT EXISTS contacts (pseudo TEXT PRIMARY KEY, pubkey TEXT)")
 		self.db.commit()
@@ -239,7 +248,7 @@ class Client:
 					result = self.cursor.fetchone()
 					if result:
 						to = result[0]
-					elif not (len(to) == 66 and to.startswith("0x")):
+					elif not (len(to) == 66 and to.startswith("0")):
 						print("Aucun contact trouvé et ce n’est pas une clé publique valide.")
 						continue
 
