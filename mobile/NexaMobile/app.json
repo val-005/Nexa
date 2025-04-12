@@ -7,5 +7,8 @@
   },
   "ios": {
     "bundleIdentifier": "com.valentin005.NexaMobile"
-  }
+  },
+  "plugins": [
+    "expo-font"
+  ]
 }
