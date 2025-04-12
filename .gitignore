@@ -3,4 +3,6 @@ node_modules/
 .venv/
 .DS_Store
 privkey.key
+contacts.db
+message.db
 *.db
