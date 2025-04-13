@@ -6,11 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('privkey.key', '.'),
-        ('message.db', '.'),
-        # Pour l'icône système (déjà incluse pour macOS ou Windows)
         ('NexaIcon.icns', '.') if sys.platform == 'darwin' else ('NexaIcon.ico', '.') if sys.platform == 'win32' else ('NexaIcon.png', '.'),
-        # Ajoute également NexaIcon.png pour Tkinter dans tous les cas
         ('NexaIcon.png', '.'),
     ],
     hiddenimports=[

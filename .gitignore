@@ -2,8 +2,7 @@ node_modules/
 /bootstrap/db.sqlite
 .venv/
 client/build/
-UI.spec
-NexaChat.spec
+client/dist/
 .DS_Store
 privkey.key
 *.db
