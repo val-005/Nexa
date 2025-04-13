@@ -1,0 +1,65 @@
+name: Build and Release Nexa UI
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Déclenché sur les tags de version
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          cd client
+          pyinstaller UI.spec
+
+      - name: Archive Windows EXE
+        if: matrix.os == 'windows-latest'
+        run: |
+          $exe = Get-ChildItem -Path client/dist -Filter *.exe -Recurse | Select-Object -First 1
+          Compress-Archive -Path $exe.FullName -DestinationPath nexachat-windows.zip
+        shell: pwsh
+
+      - name: Archive macOS App
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd client/dist
+          zip -r ../../nexachat-macos.zip NexaChat.app
+
+      - name: Archive Linux Binary
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd client/dist
+          tar -czvf ../../nexachat-linux.tar.gz NexaChat
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: |
+            nexachat-windows.zip
+            nexachat-macos.zip
+            nexachat-linux.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
