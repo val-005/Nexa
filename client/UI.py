@@ -6,7 +6,10 @@ from ecies.utils import generate_eth_key
 from datetime import datetime
 from PIL import Image, ImageTk
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))				# Chemin du répertoire du script actuel
+if getattr(sys, 'frozen', False):
+    SCRIPT_DIR = sys._MEIPASS
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 																	# Pour éviter de créer un fichier au mauvais endroit
 try:
 	locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
@@ -498,12 +501,13 @@ class NexaInterface(tk.Tk):
 		self.message_queue = queue.Queue()
 		self.key_queue = queue.Queue()
 
-		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")		# Icône de la fenêtre
-		if os.path.exists(icon_path):
-			try:
-				self.iconbitmap(icon_path)
-			except Exception as e:
-				print(f"DEBUG: l'icône n'a pas pu être chargée. {e}", file=sys.stdout)
+		if platform.system() == "Windows":
+			icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
+			if os.path.exists(icon_path):
+				try:
+					self.iconbitmap(icon_path)
+				except Exception as e:
+					print(f"DEBUG: L'icône Windows n'a pas pu être chargée : {e}", file=sys.stdout)
 		self.msg_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "message.db"), check_same_thread=False)
 		self.msg_cursor = self.msg_db.cursor()
 		self.msg_cursor.execute('''
@@ -573,22 +577,20 @@ class NexaInterface(tk.Tk):
 		self.login_frame = ttk.Frame(main_frame, padding=20)	
 		self.login_frame.pack(fill=tk.BOTH, expand=True)
 		
-		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")		# Logo avec NexaIcon.ico au centre
+		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.png")
 		if os.path.exists(icon_path):
 			try:
 				pil_image = Image.open(icon_path)
+				# Redimensionne l'image pour qu'elle ne soit pas trop grosse
 				pil_image = pil_image.resize((64, 64), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
-				tk_image = ImageTk.PhotoImage(pil_image)
-				logo_label = ttk.Label(self.login_frame, image=tk_image)
-				logo_label.image = tk_image
+				self.tk_logo = ImageTk.PhotoImage(pil_image)
+				logo_label = ttk.Label(self.login_frame, image=self.tk_logo)
 			except Exception as e:
-				print(f"DEBUG: Erreur lors du chargement de l'icône: {e}", file=sys.stdout)
 				logo_label = ttk.Label(self.login_frame, text="📱", font=(self.default_font, 48))
 		else:
 			logo_label = ttk.Label(self.login_frame, text="📱", font=(self.default_font, 48))
-		
 		logo_label.pack(pady=(30, 20))
-		
+				
 		ttk.Label(self.login_frame,
 					text="Bienvenue sur Nexa Chat !",
 					font=(self.default_font, 16, "bold")).pack(pady=(0, 30))
