@@ -3,7 +3,7 @@ name: Build and Release Nexa UI
 on:
   push:
     tags:
-      - 'v*.*.*'  # Déclenché sur les tags de version
+      - 'v*.*.*'
 
 jobs:
   build:
@@ -12,7 +12,8 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-
+    outputs:
+      artifact-name: ${{ steps.set-artifact.outputs.name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -31,7 +32,7 @@ jobs:
       - name: Build with PyInstaller
         run: |
           cd client
-          pyinstaller UI.spec
+          pyinstaller UI.spec --noconfirm
 
       - name: Archive Windows EXE
         if: matrix.os == 'windows-latest'
@@ -52,14 +53,31 @@ jobs:
           cd client/dist
           tar -czvf ../../nexachat-linux.tar.gz NexaChat
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexachat-${{ matrix.os }}
+          path: |
+            nexachat-*.zip
+            nexachat-*.tar.gz
+          if-no-files-found: ignore
+
+  release:
+    name: Release on GitHub
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           files: |
-            nexachat-windows.zip
-            nexachat-macos.zip
-            nexachat-linux.tar.gz
+            artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
