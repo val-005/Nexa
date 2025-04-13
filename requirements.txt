@@ -1,7 +1,26 @@
-ttkthemes
+# Required modules for the program
+
+
+# First, open a shell in your Nexa folder.
+
+# We recommend creating and using a virtual environment (venv) before installation :
+# python -m venv venv
+
+# To activate the environment on Windows :
+# venv\Scripts\activate
+
+# Or on Linux / macOS :
+# source venv/bin/activate
+
+
+# These modules can then be installed using this command :
+# pip install -r requirements.txt
+
 pillow
 eciespy
 eth-keys
 requests
+ttkthemes
 pyperclip
 websockets
+pyinstaller

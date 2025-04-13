@@ -27,6 +27,10 @@ Nexa is composed of:
 - **Databases**: SQLite 🗄️
 - **UI**: Tkinter (PC), React Native + Expo (Mobile)
 
+## Getting Started / Usage 🚀
+
+To get started with the different components of Nexa (bootstrap server, relay nodes, clients), please refer to the `requirements.txt` file in the respective directories. It contains the necessary setup instructions and dependencies for each part of the application.
+
 ## Development Status 🚧
 
 This project is actively developed as part of a group assignment for **L1 CMI Informatique**. It is maintained by a team of four students.

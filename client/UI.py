@@ -395,20 +395,51 @@ class NexaInterface(tk.Tk):
 
 		self.center_window()
 		self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+		self.is_mac = platform.system() == "Darwin"			# Adapte l'interface en fonction de l'OS utilisé
+		
+		# Forcer le mode clair sur toutes les plateformes
+		if self.is_mac:
+			# Force le mode clair sur macOS
+			self.tk_setPalette(background="#FFFFFF",
+							  foreground="#000000",
+							  activeBackground="#EFEFEF",
+							  activeForeground="#000000")
+		
 		self.style = ttk.Style()
-		self.style.theme_use('clam')
+		if self.is_mac:
+			try:
+				self.style.theme_use('default')  # Utiliser le thème par défaut au lieu de aqua
+			except:
+				self.style.theme_use('default')
+		else:
+			self.style.theme_use('clam')
+
+		# Couleurs en mode clair forcé
 		self.primary_color = "#6C63FF"
 		self.secondary_color = "#5A54D9"
-		self.bg_color = "#FAFAFA"
+		self.bg_color = "#FFFFFF"  # Fond blanc pur
 		self.text_color = "#212121"
 		self.message_sent_bg = "#E6F9E6"
 		self.message_received_bg = "#F1F0FE"
+
 		self.style.configure('TFrame', background=self.bg_color)
 		self.style.configure('Header.TFrame', background=self.primary_color)
+
+		# Définition des polices selon la plateforme
+		if self.is_mac:
+			self.default_font = 'Helvetica'
+		else:
+			self.default_font = 'Segoe UI'
+		self.button_font = (self.default_font, 10)
+		self.title_font = (self.default_font, 16, 'bold')
+		self.subtitle_font = (self.default_font, 10)
+		
 		self.style.configure('TLabel', 
 					   background=self.bg_color,
-					   foreground=self.text_color)
-		
+					   foreground=self.text_color,
+					   font=self.subtitle_font)
+    		
 		self.style.configure('Header.TLabel',
 					   font=('Segoe UI', 16, 'bold'),
 					   foreground='white',
@@ -424,11 +455,17 @@ class NexaInterface(tk.Tk):
 					   foreground='#FF5252',
 					   background=self.primary_color)
 		
-		self.style.configure('TButton',
-					font=('Segoe UI', 10),
-					borderwidth=0,
-					relief="flat",
-					padding=5)
+		# Configuration des boutons adaptée à macOS
+		if self.is_mac:
+			self.style.configure('TButton',
+						font=self.button_font,
+						padding=6)
+		else:
+			self.style.configure('TButton',
+						font=('Segoe UI', 10),
+						borderwidth=0,
+						relief="flat",
+						padding=5)
 		
 		self.style.map('TButton', 
 					foreground=[('pressed', 'white'), ('active', 'white')],	  
@@ -540,51 +577,59 @@ class NexaInterface(tk.Tk):
 		if os.path.exists(icon_path):
 			try:
 				pil_image = Image.open(icon_path)
-				pil_image = pil_image.resize((64, 64), Image.LANCZOS)
+				pil_image = pil_image.resize((64, 64), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
 				tk_image = ImageTk.PhotoImage(pil_image)
 				logo_label = ttk.Label(self.login_frame, image=tk_image)
 				logo_label.image = tk_image
 			except Exception as e:
 				print(f"DEBUG: Erreur lors du chargement de l'icône: {e}", file=sys.stdout)
-				logo_label = ttk.Label(self.login_frame, text="📱", font=("Segoe UI", 48))		# Si l'icône est manquante, affiche cet émoji
+				logo_label = ttk.Label(self.login_frame, text="📱", font=(self.default_font, 48))
 		else:
-			logo_label = ttk.Label(self.login_frame, text="📱", font=("Segoe UI", 48))
+			logo_label = ttk.Label(self.login_frame, text="📱", font=(self.default_font, 48))
 		
 		logo_label.pack(pady=(30, 20))
 		
 		ttk.Label(self.login_frame,
 					text="Bienvenue sur Nexa Chat !",
-					font=("Segoe UI", 16, "bold")).pack(pady=(0, 30))
+					font=(self.default_font, 16, "bold")).pack(pady=(0, 30))
 		
 		# Formulaire de connexion
 		form_frame = ttk.Frame(self.login_frame, padding=10)
 		form_frame.pack(fill=tk.X)
 
 		ttk.Label(form_frame, text="Saisis ton pseudo :").pack(anchor=tk.W, pady=(0, 5))
-		ttk.Entry(form_frame, textvariable=self.pseudo, font=("Segoe UI", 12)).pack(fill=tk.X, pady=(0, 20))
+		ttk.Entry(form_frame, textvariable=self.pseudo, font=(self.default_font, 12)).pack(fill=tk.X, pady=(0, 20))
 		ttk.Label(form_frame, textvariable=self.nodes_var).pack(anchor=tk.W, pady=(0, 10))
 		
-		# Bouton de connexion
-		self.connect_button = tk.Button(form_frame,
-								  text="Me connecter",
-								  command=self.connect,
-								  bg=self.primary_color,
-								  fg="white",
-								  font=('Segoe UI', 10, 'bold'),
-								  relief=tk.RAISED,
-								  borderwidth=0,
-								  padx=10, pady=8,
-								  cursor="hand2")
-		self.connect_button.pack(fill=tk.X, ipady=8)
-		self.connect_button.config(state=tk.DISABLED)	# Désactivé par défaut jusqu'à ce que des nœuds soient trouvés
-        
-        # Fenêtre de chat
+		# Bouton de connexion avec style adapté selon la plateforme
+		if self.is_mac:
+			self.connect_button = ttk.Button(form_frame, 
+								 text="Me connecter",
+								 command=self.connect,
+								 style='TButton')
+			self.connect_button.pack(fill=tk.X, pady=5)
+		else:
+			self.connect_button = tk.Button(form_frame,
+								text="Me connecter",
+								command=self.connect,
+								bg=self.primary_color,
+								fg="white", 
+								font=(self.default_font, 10, 'bold'),
+								relief=tk.RAISED,
+								borderwidth=0,
+								padx=10, pady=8,
+								cursor="hand2")
+			self.connect_button.pack(fill=tk.X, ipady=8)
+		
+		self.connect_button.config(state=tk.DISABLED)  # Désactivé par défaut jusqu'à ce que des nœuds soient trouvés
+			
+		# Fenêtre de chat
 		self.chat_frame = ttk.Frame(main_frame)
 
 		# En-tête avec clé publique de l'utilisateur
 		key_frame = ttk.Frame(self.chat_frame, padding=10)
 		key_frame.pack(fill=tk.X)
-		ttk.Label(key_frame, text="Ta clé publique :", font=('Segoe UI', 9, 'bold')).pack(anchor=tk.W)
+		ttk.Label(key_frame, text="Ta clé publique :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
 		
 		key_display_frame = ttk.Frame(key_frame)
 		key_display_frame.pack(fill=tk.X, pady=5)
@@ -599,60 +644,73 @@ class NexaInterface(tk.Tk):
 		self.key_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=5, ipadx=5)
 		
 		# Bouton pour copier la clé
-		copy_btn = tk.Button(key_display_frame,
-					   text="Copier",
-					   command=self.copy_key,
-					   bg=self.primary_color,
-					   fg="white",
-					   font=('Segoe UI', 9, 'bold'),
-					   relief=tk.RAISED,
-					   borderwidth=0,
-					   padx=8, pady=2,
-					   cursor="hand2")
+		if self.is_mac:
+			copy_btn = ttk.Button(key_display_frame,
+						   text="Copier",
+						   command=self.copy_key,
+						   style='TButton')
+		else:
+			copy_btn = tk.Button(key_display_frame,
+						   text="Copier",
+						   command=self.copy_key,
+						   bg=self.primary_color,
+						   fg="white",
+						   font=(self.default_font, 9, 'bold'),
+						   relief=tk.RAISED,
+						   borderwidth=0,
+						   padx=8, pady=2,
+						   cursor="hand2")
 		
 		copy_btn.pack(side=tk.RIGHT)
 		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
 
 		# Zone d'affichage des messages
-		self.chat_text = scrolledtext.ScrolledText(self.chat_frame, wrap=tk.WORD, height=15)
+		self.chat_text = scrolledtext.ScrolledText(self.chat_frame,
+												wrap=tk.WORD,
+												height=15,
+												font=(self.default_font, 11),
+												bd=1 if self.is_mac else 0,  # Bordure légère sur Mac
+												relief=tk.SUNKEN if self.is_mac else tk.FLAT
+												)
 		self.chat_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 		self.chat_text.config(state=tk.DISABLED)
 
+		# Configuration des tags pour le formatage du texte
 		self.chat_text.tag_configure("message_sent",
-							   font=('Segoe UI', 11),
-							   spacing1=0, spacing2=0, spacing3=0,
-							   lmargin1=5, lmargin2=5,
-							   foreground="black")
-		
+									font=(self.default_font, 11),
+									spacing1=0, spacing2=0, spacing3=0,
+									lmargin1=5, lmargin2=5,
+									foreground="black")
+
 		self.chat_text.tag_configure("system_message_center",
-							   foreground="#757575",
-							   font=('Segoe UI', 9),
-							   justify='center',
-							   spacing1=2, spacing2=0, spacing3=2)
-		
+									foreground="#757575",
+									font=(self.default_font, 9),
+									justify='center',
+									spacing1=2, spacing2=0, spacing3=2)
+							
 		self.chat_text.tag_configure("message_received",
-							   font=('Segoe UI', 11),
-							   spacing1=0, spacing2=0, spacing3=0,
-							   lmargin1=5, lmargin2=5,
-							   foreground="black")
+									font=(self.default_font, 11),
+									spacing1=0, spacing2=0, spacing3=0,
+									lmargin1=5, lmargin2=5,
+									foreground="black")
 		
 		self.chat_text.tag_configure("sender_name",
-							   font=('Segoe UI', 10, 'bold'),
-							   justify='left',
-							   lmargin1=5, lmargin2=5,
-							   foreground=self.primary_color)
+									font=(self.default_font, 10, 'bold'),
+									justify='left',
+									lmargin1=5, lmargin2=5,
+									foreground=self.primary_color)
 		
 		self.chat_text.tag_configure("system_message",
-							   foreground="#757575",
-							   font=('Segoe UI', 9),
-							   justify='left',
-							   spacing1=1, spacing2=0, spacing3=1,
-							   lmargin1=5, lmargin2=5)
+									foreground="#757575",
+									font=(self.default_font, 9),
+									justify='left',
+									spacing1=1, spacing2=0, spacing3=1,
+									lmargin1=5, lmargin2=5)
 		
 		# Zone de saisie
 		dest_frame = ttk.Frame(self.chat_frame, padding=10)
 		dest_frame.pack(fill=tk.X)
-		ttk.Label(dest_frame, text="Clé du destinataire :", font=('Segoe UI', 9, 'bold')).pack(anchor=tk.W)
+		ttk.Label(dest_frame, text="Clé du destinataire :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
 		
 		dest_entry = ttk.Entry(dest_frame, textvariable=self.recipient_key)
 		dest_entry.pack(fill=tk.X, pady=5)
@@ -660,31 +718,48 @@ class NexaInterface(tk.Tk):
 		
 		msg_frame = ttk.Frame(self.chat_frame, padding=10)
 		msg_frame.pack(fill=tk.X, side=tk.BOTTOM)
-		ttk.Label(msg_frame, text="Message :", font=('Segoe UI', 9, 'bold')).pack(anchor=tk.W)
+		ttk.Label(msg_frame, text="Message :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
 
 		input_frame = ttk.Frame(msg_frame)
 		input_frame.pack(fill=tk.X, pady=5)
 
-		self.msg_entry = ttk.Entry(input_frame, textvariable=self.message_to_send, font=('Segoe UI', 10))
+		self.msg_entry = ttk.Entry(input_frame, textvariable=self.message_to_send, font=(self.default_font, 10))
 		self.msg_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 		self.msg_entry.bind("<Return>", lambda e: self.send_message())
-		send_btn = tk.Button(input_frame,
-					   text="Envoyer",
-					   command=self.send_message,
-					   bg=self.primary_color,
-					   fg="white",
-					   font=('Segoe UI', 9, 'bold'),
-					   relief=tk.RAISED,
-					   borderwidth=0,
-					   padx=10, pady=4,
-					   cursor="hand2")
+		
+		# Bouton d'envoi
+		if self.is_mac:
+			send_btn = ttk.Button(input_frame,
+							text="Envoyer",
+							command=self.send_message,
+							style='TButton')
+		else:
+			send_btn = tk.Button(input_frame,
+							text="Envoyer",
+							command=self.send_message,
+							bg=self.primary_color,
+							fg="white",
+							font=(self.default_font, 9, 'bold'),
+							relief=tk.RAISED,
+							borderwidth=0,
+							padx=10, pady=4,
+							cursor="hand2")
 		
 		send_btn.pack(side=tk.RIGHT)
 
-		# Effets de survol des boutons
-		for btn in [self.connect_button, copy_btn, send_btn]:
-			btn.bind("<Enter>", lambda e, b=btn: b.config(bg=self.secondary_color))
-			btn.bind("<Leave>", lambda e, b=btn: b.config(bg=self.primary_color))
+		# Effets de survol des boutons seulement pour Windows
+		if not self.is_mac:
+			buttons = []
+			if hasattr(self, 'connect_button') and isinstance(self.connect_button, tk.Button):
+				buttons.append(self.connect_button)
+			if isinstance(copy_btn, tk.Button):
+				buttons.append(copy_btn)
+			if isinstance(send_btn, tk.Button):
+				buttons.append(send_btn)
+				
+			for btn in buttons:
+				btn.bind("<Enter>", lambda e, b=btn: b.config(bg=self.secondary_color))
+				btn.bind("<Leave>", lambda e, b=btn: b.config(bg=self.primary_color))
 
 	def load_message_history(self):
 		'''
@@ -859,6 +934,12 @@ class NexaInterface(tk.Tk):
 			self.message_to_send.set("")
 			return
 			
+		# Vérification de la longueur du message (sans compter les espaces)
+		message_no_spaces = message.replace(" ", "")
+		if len(message_no_spaces) > 10000:
+			messagebox.showerror("Erreur", "Le message est trop long. La limite est de 10000 caractères (espaces non compris).")
+			return
+		
 		self.message_to_send.set("")
 		if hasattr(self.client, 'key_requested') and self.client.key_requested:
 			key = self.recipient_key.get().strip()
