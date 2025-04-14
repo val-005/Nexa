@@ -1,9 +1,12 @@
-node_modules/
 /bootstrap/db.sqlite
-.venv/
+commande.exe.txt
+node_modules/
 client/build/
+settings.ini
+todoList.txt
 client/dist/
-.DS_Store
 privkey.key
+.DS_Store
+.venv/
+venv/
 *.db
-comment_créer_fichier_exe.txt

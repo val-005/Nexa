@@ -1,16 +1,14 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3
-import queue, time, tkinter as tk
+import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3, configparser, queue, time, concurrent.futures, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk 
 
 if getattr(sys, 'frozen', False):
     SCRIPT_DIR = sys._MEIPASS
 else:
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-																	# Pour éviter de créer un fichier au mauvais endroit
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))		# Pour éviter de créer un fichier au mauvais endroit
 try:
 	locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
 except:
@@ -27,6 +25,35 @@ available_nodes = []
 node_detection_callback = None
 app = None
 
+SETTINGS_PATH = os.path.join(SCRIPT_DIR, "settings.ini")
+
+COLOR_CHOICES = {
+    "reset": ("#339CFF", "#1976D2"),		"default": ("#339CFF", "#1976D2"),
+	"light blue": ("#339CFF", "#1976D2"),	"bleu clair": ("#339CFF", "#1976D2"),
+    "light green": ("#7ED957", "#388E3C"),	"vert clair": ("#7ED957", "#388E3C"),
+    "green": ("#388E3C", "#145A32"),		"vert": ("#388E3C", "#145A32"),
+    "red": ("#D50000", "#B71C1C"), 			"rouge": ("#D50000", "#B71C1C"),
+    "pink": ("#FF69B4", "#C2185B"),			"rose": ("#FF69B4", "#C2185B")
+}
+
+def load_color_settings():
+    config = configparser.ConfigParser()
+    if not os.path.exists(SETTINGS_PATH):
+        config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
+        with open(SETTINGS_PATH, 'w') as configfile:
+            config.write(configfile)
+    else:
+        config.read(SETTINGS_PATH)
+        if 'Colors' not in config:
+            config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
+    return config['Colors'].get('primary', '#339CFF'), config['Colors'].get('secondary', '#1976D2')
+
+def save_color_settings(primary, secondary):
+    config = configparser.ConfigParser()
+    config['Colors'] = {'primary': primary, 'secondary': secondary}
+    with open(SETTINGS_PATH, 'w') as configfile:
+        config.write(configfile)
+
 def signal_handler(sig, frame):
 	'''
 	Ferme le programme quand Crtl+C est saisi.
@@ -35,9 +62,15 @@ def signal_handler(sig, frame):
 	if app:
 		app.destroy()
 	if platform.system() == "Windows":
-		os.system("taskkill /F /PID " + str(os.getppid()))
+		try:
+			os.system("taskkill /F /PID " + str(os.getppid()) + " >nul 2>&1")
+		except Exception:
+			pass
 	else:
-		os.kill(os.getpid(), signal.SIGTERM)
+		try:
+			os.kill(os.getpid(), signal.SIGTERM)
+		except Exception:
+			pass
 	sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -230,6 +263,8 @@ class Client:
 				async def message_processor():
 					while True:
 						try:
+							if self.quitting:
+								break
 							msg_data = await message_queue.get()
 							message, recipient_key = msg_data
 							new_msg = ""
@@ -244,25 +279,46 @@ class Client:
 							print(f"Vous: {message}")
 							message_queue.task_done()
 							await asyncio.sleep(0.01)	# Légère pause pour éviter de surcharger le serveur
+						except asyncio.CancelledError:
+							break
 						except Exception as e:
-							messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique. Réessaie.")
+							messagebox.showerror("Erreur", "Assure-toi d'avoir correctement saisi la clé publique. Réessaie.")
 							message_queue.task_done()
-				asyncio.create_task(message_processor())
-				while True:
-					if self.message_to_send and self.recipient_key:
-						msg = self.message_to_send
-						key = self.recipient_key
-						self.message_to_send = None
-						self.recipient_key = None
-						if self.verify_key(key):
-							await message_queue.put((msg, key))
-						else:
-							print("Erreur: Clé du destinataire invalide.")
-					await asyncio.sleep(0.05)
+				
+				processor_task = asyncio.create_task(message_processor())
+				
+				try:
+					while True:
+						if self.quitting:
+							break
+						if self.message_to_send and self.recipient_key:
+							msg = self.message_to_send
+							key = self.recipient_key
+							self.message_to_send = None
+							self.recipient_key = None
+							if self.verify_key(key):
+								await message_queue.put((msg, key))
+							else:
+								print("Erreur: Clé du destinataire invalide.")
+						try:
+							await asyncio.sleep(0.05)
+						except asyncio.CancelledError:
+							break
+				finally:
+					processor_task.cancel()
+					try:
+						await processor_task
+					except asyncio.CancelledError:
+						pass
+					
 		except websockets.exceptions.ConnectionClosed:
-			print("Erreur: Connexion fermée par le serveur.")
+			if not self.quitting:
+				print("Erreur: Connexion fermée par le serveur.")
+		except asyncio.CancelledError:
+			pass
 		except Exception as e:
-			print(f"Erreur: Problème de connexion au serveur. (\"{e}\")")
+			if not self.quitting:
+				print(f"Erreur: Problème de connexion au serveur. (\"{e}\")")
 
 	async def keep_connection_alive(self, interval=30):
 		try:
@@ -272,10 +328,7 @@ class Client:
 					try:
 						await self.websocket.ping()		# Ping envoyé pour maintenir la connexion active
 					except Exception as e:
-						print(f"Erreur lors de l'envoi du ping : {e}")
 						await self.reconnect()			# Tentative de reconnexion si le ping échoue
-		except asyncio.CancelledError:
-			print("Tâche de ping annulée.")
 		except Exception as e:
 			if not self.quitting:
 				print(f"Erreur inattendue dans le maintien de la connexion : {e}")
@@ -306,6 +359,85 @@ class Client:
 			sys.exit(0)
 		finally:
 			self.loop.close()
+
+class WrapperClient:
+    def __init__(self):
+        self.client = None
+        self.client_thread = None
+        self.quitting = False
+
+    def start_client(self, host="auto", port=9102):
+        if self.client_thread and self.client_thread.is_alive():
+            return False
+            
+        self.client = Client(host, port)
+        self.quitting = False
+        self.client_thread = threading.Thread(target=self._run_client)
+        self.client_thread.daemon = True
+        self.client_thread.start()
+        return True
+        
+    def _run_client(self):
+        try:
+            self.client.start()
+        except Exception as e:
+            # Ne pas afficher l'erreur spécifique de la boucle événementielle
+            if "Event loop stopped before Future completed" not in str(e):
+                print(f"Erreur dans le client: {e}")
+        finally:
+            self.client = None
+        
+    def stop_client(self):
+        if not self.client:
+            return
+            
+        self.quitting = True
+        if self.client:
+            self.client.quitting = True
+            
+        # Fermer la websocket et annuler toutes les tâches en attente
+        try:
+            if hasattr(self.client, 'websocket') and self.client.websocket:
+                loop = self.client.loop
+                if loop and loop.is_running():
+                    # Annuler toutes les tâches en cours
+                    for task in asyncio.all_tasks(loop):
+                        task.cancel()
+                    
+                    # Fermer la websocket proprement
+                    coro = self.client.websocket.close()
+                    future = asyncio.run_coroutine_threadsafe(coro, loop)
+                    try:
+                        # Attendre la fermeture avec timeout
+                        future.result(timeout=1.0)
+                    except (asyncio.TimeoutError, concurrent.futures.TimeoutError, Exception):
+                        pass
+        except Exception as e:
+            pass
+            
+        # Attendre que le thread du client se termine
+        max_wait = 2.0  # secondes
+        start_time = time.time()
+        while self.client_thread and self.client_thread.is_alive() and time.time() - start_time < max_wait:
+            time.sleep(0.1)
+            
+        # Forcer l'arrêt de la boucle événementielle
+        if self.client and hasattr(self.client, 'loop') and self.client.loop:
+            try:
+                loop = self.client.loop
+                if loop.is_running():
+                    # Définir un signal de sortie pour toutes les tâches en attente
+                    for task in asyncio.all_tasks(loop):
+                        if not task.done():
+                            task.cancel()
+                    
+                    # Arrêter la boucle
+                    loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                pass
+                
+        # Nettoyer le client
+        self.client = None
 
 # Interface graphique
 class MessageRedirect:
@@ -418,15 +550,11 @@ class NexaInterface(tk.Tk):
 		else:
 			self.style.theme_use('clam')
 
-		# Couleurs en mode clair forcé
-		self.primary_color = "#6C63FF"
-		self.secondary_color = "#5A54D9"
-		self.bg_color = "#FFFFFF"  # Fond blanc pur
+		# Chargement des couleurs depuis les paramètres
+		self.primary_color, self.secondary_color = load_color_settings()
 		self.text_color = "#212121"
-		self.message_sent_bg = "#E6F9E6"
-		self.message_received_bg = "#F1F0FE"
 
-		self.style.configure('TFrame', background=self.bg_color)
+		self.style.configure('TFrame', background="#FFFFFF")
 		self.style.configure('Header.TFrame', background=self.primary_color)
 
 		# Définition des polices selon la plateforme
@@ -439,7 +567,7 @@ class NexaInterface(tk.Tk):
 		self.subtitle_font = (self.default_font, 10)
 		
 		self.style.configure('TLabel', 
-					   background=self.bg_color,
+					   background="#FFFFFF",
 					   foreground=self.text_color,
 					   font=self.subtitle_font)
     		
@@ -455,7 +583,7 @@ class NexaInterface(tk.Tk):
 		
 		self.style.configure('Status.TLabel',
 					   font=('Segoe UI', 10),
-					   foreground='#FF5252',
+					   foreground=self.text_color,
 					   background=self.primary_color)
 		
 		# Configuration des boutons adaptée à macOS
@@ -500,6 +628,7 @@ class NexaInterface(tk.Tk):
 		self.connected = False
 		self.message_queue = queue.Queue()
 		self.key_queue = queue.Queue()
+		self.client_wrapper = WrapperClient()
 
 		if platform.system() == "Windows":
 			icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
@@ -565,17 +694,12 @@ class NexaInterface(tk.Tk):
 		header_padding = ttk.Frame(header_frame, style='Header.TFrame')
 		header_padding.pack(fill=tk.X, padx=15, pady=15)
 
-		# Statut de connexion
-		ttk.Label(header_padding, text="Nexa Chat", style='Header.TLabel').pack(anchor=tk.W)
-		status_frame = ttk.Frame(header_padding, style='Header.TFrame')
-		status_frame.pack(fill=tk.X, pady=(2, 0))
-		
-		self.status_label = ttk.Label(status_frame, textvariable=self.status, style='Header.Subtitle.TLabel')
-		self.status_label.pack(side=tk.LEFT)
-		
+		# Titre centré
+		ttk.Label(header_padding, text="Nexa Chat", style='Header.TLabel').pack(anchor=tk.CENTER, expand=True)
+
 		# Page de connexion
 		self.login_frame = ttk.Frame(main_frame, padding=20)	
-		self.login_frame.pack(fill=tk.BOTH, expand=True)
+		self.login_frame.pack(fill=tk.BOTH, expand=True, pady=(60, 0))  # Ajout d'un padding vertical
 		
 		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.png")
 		if os.path.exists(icon_path):
@@ -600,7 +724,9 @@ class NexaInterface(tk.Tk):
 		form_frame.pack(fill=tk.X)
 
 		ttk.Label(form_frame, text="Saisis ton pseudo :").pack(anchor=tk.W, pady=(0, 5))
-		ttk.Entry(form_frame, textvariable=self.pseudo, font=(self.default_font, 12)).pack(fill=tk.X, pady=(0, 20))
+		pseudo_entry = ttk.Entry(form_frame, textvariable=self.pseudo, font=(self.default_font, 12))
+		pseudo_entry.pack(fill=tk.X, pady=(0, 20))
+		pseudo_entry.bind("<Return>", lambda event: self.connect() if self.connect_button['state'] != tk.DISABLED else None)
 		ttk.Label(form_frame, textvariable=self.nodes_var).pack(anchor=tk.W, pady=(0, 10))
 		
 		# Bouton de connexion avec style adapté selon la plateforme
@@ -666,7 +792,7 @@ class NexaInterface(tk.Tk):
 		copy_btn.pack(side=tk.RIGHT)
 		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
 
-		# Zone d'affichage des messages
+		 # Zone d'affichage des messages
 		self.chat_text = scrolledtext.ScrolledText(self.chat_frame,
 												wrap=tk.WORD,
 												height=15,
@@ -801,12 +927,15 @@ class NexaInterface(tk.Tk):
 			return
 		
 		self.status.set("Connexion en cours...")
-		self.status_label.configure(style='Header.Subtitle.TLabel')
 		self.connect_button.config(state=tk.DISABLED)
 		
 		def setup_client():
 			try:
-				self.client = Client("auto", 9102)
+				if not self.client_wrapper.start_client("auto", 9102):
+					self.after(0, lambda: messagebox.showerror("Erreur", "Une connexion est déjà en cours"))
+					return
+					
+				self.client = self.client_wrapper.client
 
 				# Met à jour l'interface
 				self.after(0, lambda: self.key_var.set(self.client.pubKey))
@@ -817,37 +946,31 @@ class NexaInterface(tk.Tk):
 				sys.stdout = redirect
 				self.original_input = __builtins__.input
 				__builtins__.input = self.mock_input
-				
-				self.client.start()
 
-			except Exception as e:	# En cas d'erreur, revenir à l'écran de connexion
+			except Exception as e:  # En cas d'erreur, revenir à l'écran de connexion
 				self.after(0, lambda: self.status.set(f"Erreur : {str(e)}"))
-				self.after(0, lambda: self.status_label.configure(style='Status.TLabel'))
 				self.after(0, lambda: self.connect_button.config(state=tk.NORMAL))
-				self.after(0, lambda: messagebox.showerror("Erreur", f"Impossible de se connecter :\n{str(e)}"))
-			finally:
-				sys.stdout = self.original_stdout
-				__builtins__.input = self.original_input
+				self.after(0, lambda e=e: messagebox.showerror("Erreur", f"Impossible de se connecter :\n{str(e)}"))
 				self.after(0, self.show_login_interface)
 		threading.Thread(target=setup_client, daemon=True).start()
 
 	def show_chat_interface(self):
 		'''
 		Affiche l'interface de chat.
-		'''
+		 '''
 		self.login_frame.pack_forget()
 		self.chat_frame.pack(fill=tk.BOTH, expand=True)
-		self.status.set("Connecté")
 		self.connected = True
-
-		# Affiche la date (au centre)
-		current_date = datetime.now().strftime("%A %d %B %Y")
-		current_date = current_date[0].upper() + current_date[1:]
-		self.chat_text.config(state=tk.NORMAL)
-		self.chat_text.insert(tk.END, "\n", "system_message")
-		self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
-		self.chat_text.config(state=tk.DISABLED)
+		# Affiche la date (au centre) uniquement si ce n'est pas un /reconnect
+		if not hasattr(self, '_reconnecting') or not self._reconnecting:
+			current_date = datetime.now().strftime("%A %d %B %Y")
+			current_date = current_date[0].upper() + current_date[1:]
+			self.chat_text.config(state=tk.NORMAL)
+			self.chat_text.insert(tk.END, "\n", "system_message")
+			self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
+			self.chat_text.config(state=tk.DISABLED)
 		self.msg_entry.focus_set()
+		self._reconnecting = False
 
 	def show_login_interface(self):
 		'''
@@ -855,10 +978,14 @@ class NexaInterface(tk.Tk):
 		'''
 		self.chat_frame.pack_forget()
 		self.login_frame.pack(fill=tk.BOTH, expand=True)
-		self.status.set("Déconnecté")
-		self.status_label.configure(style='Status.TLabel')
 		self.connected = False
 		self.connect_button.config(state=tk.NORMAL)
+		# Ajout du binding et focus sur le champ pseudo
+		for child in self.login_frame.winfo_children():
+			for subchild in child.winfo_children():
+				if isinstance(subchild, ttk.Entry):
+					subchild.bind("<Return>", lambda event: self.connect() if self.connect_button['state'] != tk.DISABLED else None)
+					subchild.focus_set()
 
 	def mock_input(self, prompt=""):
 		'''
@@ -902,6 +1029,35 @@ class NexaInterface(tk.Tk):
 		if key and key != "Non disponible":
 			pyperclip.copy(key)
 
+	def apply_theme_colors(self):
+		self.style.configure('Header.TFrame', background=self.primary_color)
+		self.style.configure('Header.TLabel', background=self.primary_color)
+		self.style.configure('Header.Subtitle.TLabel', background=self.primary_color)
+		self.style.configure('Status.TLabel', background=self.primary_color)
+		self.chat_text.tag_configure("sender_name", foreground=self.primary_color)
+		# Mise à jour dynamique de tous les boutons
+		def update_buttons(widget):
+			if isinstance(widget, tk.Button):
+				widget.config(bg=self.primary_color)
+			for child in widget.winfo_children():
+				update_buttons(child)
+		if not self.is_mac:
+			if hasattr(self, 'connect_button') and isinstance(self.connect_button, tk.Button):
+				self.connect_button.config(bg=self.primary_color)
+			if hasattr(self, 'chat_frame'):
+				update_buttons(self.chat_frame)
+
+	def set_theme_color(self, color_name):
+		color_name = color_name.lower().strip()
+		if color_name in COLOR_CHOICES:
+			primary, secondary = COLOR_CHOICES[color_name]
+			self.primary_color = primary
+			self.secondary_color = secondary
+			save_color_settings(primary, secondary)
+			self.apply_theme_colors()
+			return True
+		return False
+
 	def send_message(self):
 		'''
 		Gère l'envoi des messages.
@@ -912,8 +1068,16 @@ class NexaInterface(tk.Tk):
 		message = self.message_to_send.get().strip()
 		if not message:
 			return
-		
-		# Commande spéciale pour vider l'historique des messages
+		if message.startswith("/color "):
+			color_name = message[7:].strip().lower()
+			if self.set_theme_color(color_name):
+				self.message_to_send.set("")
+			return
+		if message == "/reconnect":
+			self._reconnecting = True
+			self.disconnect_and_reset()
+			self.message_to_send.set("")
+			return
 		if message == "/clear":
 			try:
 				self.msg_cursor.execute("DELETE FROM messages")
@@ -921,14 +1085,13 @@ class NexaInterface(tk.Tk):
 				self.chat_text.config(state=tk.NORMAL)
 				self.chat_text.delete(1.0, tk.END)
 				self.chat_text.config(state=tk.DISABLED)
-				
 				# Réaffiche la date après avoir effacé les messages
 				current_date = datetime.now().strftime("%A %d %B %Y")
 				current_date = current_date[0].upper() + current_date[1:]
 				self.chat_text.config(state=tk.NORMAL)
 				self.chat_text.insert(tk.END, "\n", "system_message")
 				self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
-				self.chat_text.insert(tk.END, "Historique des messages effacé.\n", "system_message")
+				self.chat_text.insert(tk.END, "Historique des messages effacé.\n", "system_message_center")
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
 			except Exception as e:
@@ -968,21 +1131,62 @@ class NexaInterface(tk.Tk):
 		else:
 			print(message)
 
+	def disconnect_and_reset(self):
+		"""
+		Déconnecte le client et réinitialise l'interface
+		"""
+		# Arrête le client proprement
+		if self.client_wrapper:
+			self.client_wrapper.stop_client()
+			
+		# Restaure les redirections standard
+		if hasattr(self, 'original_stdout') and self.original_stdout:
+			sys.stdout = self.original_stdout
+		if hasattr(self, 'original_input') and self.original_input:
+			__builtins__.input = self.original_input
+			
+		# Réinitialise le client
+		self.client = None
+		self.connected = False
+		self.key_var.set("Non disponible")
+		
+		# Retour à l'interface de login
+		self.show_login_interface()
+		if available_nodes:
+			self.connect_button.config(state=tk.NORMAL)
+		else:
+			self.connect_button.config(state=tk.DISABLED)
+
 	def on_closing(self):
 		'''
 		Gère la fermeture du programme.
 		'''
+		if self.client_wrapper:
+			self.client_wrapper.stop_client()
 		try:
 			self.msg_db.close()
 		except:
 			pass
 		self.destroy()
 		self.quitting = True
+		
+		# Fermeture silencieuse sans message de succès
 		if platform.system() == "Windows":
-			os.system("taskkill /F /PID " + str(os.getppid()))
+			try:
+				# Utiliser CREATE_NO_WINDOW pour éviter tout affichage
+				import subprocess
+				subprocess.run(['taskkill', '/F', '/PID', str(os.getppid())], 
+							  stdout=subprocess.DEVNULL, 
+							  stderr=subprocess.DEVNULL,
+							  creationflags=subprocess.CREATE_NO_WINDOW)
+			except Exception:
+				pass
 		else:
-			os.kill(os.getpid(), signal.SIGTERM)
-			sys.exit(0)
+			try:
+				os.kill(os.getpid(), signal.SIGTERM)
+			except Exception:
+				pass
+		sys.exit(0)
 
 if __name__ == "__main__":
 	app = NexaInterface()
