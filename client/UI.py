@@ -3,12 +3,18 @@ from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
-from PIL import Image, ImageTk 
+from PIL import Image, ImageTk
+from appdirs import user_data_dir
 
 if getattr(sys, 'frozen', False):
     SCRIPT_DIR = sys._MEIPASS
 else:
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))		# Pour éviter de créer un fichier au mauvais endroit
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Chemin pour lecture (dans le bundle) et écriture (user_data_dir)
+SETTINGS_BUNDLE_PATH = os.path.join(SCRIPT_DIR, "settings.ini")
+SETTINGS_USER_PATH = os.path.join(user_data_dir("Nexa", "Nexa"), "settings.ini")
+
 try:
 	locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
 except:
@@ -25,8 +31,6 @@ available_nodes = []
 node_detection_callback = None
 app = None
 
-SETTINGS_PATH = os.path.join(SCRIPT_DIR, "settings.ini")
-
 COLOR_CHOICES = {
     "reset": ("#339CFF", "#1976D2"),		"default": ("#339CFF", "#1976D2"),
 	"light blue": ("#339CFF", "#1976D2"),	"bleu clair": ("#339CFF", "#1976D2"),
@@ -38,20 +42,29 @@ COLOR_CHOICES = {
 
 def load_color_settings():
     config = configparser.ConfigParser()
-    if not os.path.exists(SETTINGS_PATH):
-        config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
-        with open(SETTINGS_PATH, 'w') as configfile:
+    # Priorité à la version utilisateur (modifiable)
+    if os.path.exists(SETTINGS_USER_PATH):
+        config.read(SETTINGS_USER_PATH)
+    elif os.path.exists(SETTINGS_BUNDLE_PATH):
+        config.read(SETTINGS_BUNDLE_PATH)
+        # Copie la config du bundle vers le dossier utilisateur si pas déjà présent
+        os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
+        with open(SETTINGS_USER_PATH, 'w') as configfile:
             config.write(configfile)
     else:
-        config.read(SETTINGS_PATH)
-        if 'Colors' not in config:
-            config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
+        config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
+        os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
+        with open(SETTINGS_USER_PATH, 'w') as configfile:
+            config.write(configfile)
+    if 'Colors' not in config:
+        config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
     return config['Colors'].get('primary', '#339CFF'), config['Colors'].get('secondary', '#1976D2')
 
 def save_color_settings(primary, secondary):
     config = configparser.ConfigParser()
     config['Colors'] = {'primary': primary, 'secondary': secondary}
-    with open(SETTINGS_PATH, 'w') as configfile:
+    os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
+    with open(SETTINGS_USER_PATH, 'w') as configfile:
         config.write(configfile)
 
 def signal_handler(sig, frame):
@@ -61,16 +74,15 @@ def signal_handler(sig, frame):
 	global app
 	if app:
 		app.destroy()
-	if platform.system() == "Windows":
-		try:
-			os.system("taskkill /F /PID " + str(os.getppid()) + " >nul 2>&1")
-		except Exception:
-			pass
-	else:
-		try:
-			os.kill(os.getpid(), signal.SIGTERM)
-		except Exception:
-			pass
+	try:
+		if platform.system() == 'Windows':
+			os.system(f'taskkill /PID {os.getpid()} /F >nul 2>&1')
+	except Exception:
+		pass
+	try:
+		os.kill(os.getpid(), 9)
+	except Exception:
+		pass
 	sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -114,8 +126,10 @@ class Client:
 		self.host = host
 		self.port = port
 		
-		# Chemin absolu pour privkey.key
-		privkey_path = os.path.join(SCRIPT_DIR, "privkey.key")
+		data_dir = user_data_dir("Nexa", "Nexa")
+		os.makedirs(data_dir, exist_ok=True)
+		privkey_path = os.path.join(data_dir, "privkey.key")
+		
 		try:
 			with open(privkey_path, "r") as f:
 				content = f.read().strip()
@@ -637,7 +651,11 @@ class NexaInterface(tk.Tk):
 					self.iconbitmap(icon_path)
 				except Exception as e:
 					print(f"DEBUG: L'icône Windows n'a pas pu être chargée : {e}", file=sys.stdout)
-		self.msg_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "message.db"), check_same_thread=False)
+
+		data_dir = user_data_dir("Nexa", "Nexa")
+		os.makedirs(data_dir, exist_ok=True)
+		self.msg_db = sqlite3.connect(os.path.join(data_dir, "message.db"), check_same_thread=False)
+
 		self.msg_cursor = self.msg_db.cursor()
 		self.msg_cursor.execute('''
 			CREATE TABLE IF NOT EXISTS messages (
@@ -1169,23 +1187,15 @@ class NexaInterface(tk.Tk):
 			pass
 		self.destroy()
 		self.quitting = True
-		
-		# Fermeture silencieuse sans message de succès
-		if platform.system() == "Windows":
-			try:
-				# Utiliser CREATE_NO_WINDOW pour éviter tout affichage
-				import subprocess
-				subprocess.run(['taskkill', '/F', '/PID', str(os.getppid())], 
-							  stdout=subprocess.DEVNULL, 
-							  stderr=subprocess.DEVNULL,
-							  creationflags=subprocess.CREATE_NO_WINDOW)
-			except Exception:
-				pass
-		else:
-			try:
-				os.kill(os.getpid(), signal.SIGTERM)
-			except Exception:
-				pass
+		try:
+			if platform.system() == 'Windows':
+				os.system(f'taskkill /PID {os.getpid()} /F >nul 2>&1')
+		except Exception:
+			pass
+		try:
+			os.kill(os.getpid(), 9)
+		except Exception:
+			pass
 		sys.exit(0)
 
 if __name__ == "__main__":

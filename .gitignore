@@ -1,9 +1,9 @@
 /bootstrap/db.sqlite
-commande.exe.txt
 node_modules/
 client/build/
 settings.ini
 todoList.txt
+buildApp.bat
 client/dist/
 privkey.key
 .DS_Store
