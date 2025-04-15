@@ -24,3 +24,4 @@ ttkthemes
 pyperclip
 websockets
 pyinstaller
+appdirs

@@ -5,6 +5,7 @@ from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
 from PIL import Image, ImageTk
+from appdirs import user_data_dir
 
 if getattr(sys, 'frozen', False):
     SCRIPT_DIR = sys._MEIPASS
@@ -82,7 +83,9 @@ class Client:
 		self.port = port
 		
 		# Chemin absolu pour privkey.key
-		privkey_path = os.path.join(SCRIPT_DIR, "privkey.key")
+		data_dir = user_data_dir("Nexa", "Nexa")
+		os.makedirs(data_dir, exist_ok=True)
+		privkey_path = os.path.join(data_dir, "privkey.key")
 		try:
 			with open(privkey_path, "r") as f:
 				content = f.read().strip()
@@ -508,7 +511,9 @@ class NexaInterface(tk.Tk):
 					self.iconbitmap(icon_path)
 				except Exception as e:
 					print(f"DEBUG: L'icône Windows n'a pas pu être chargée : {e}", file=sys.stdout)
-		self.msg_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "message.db"), check_same_thread=False)
+		data_dir = user_data_dir("Nexa", "Nexa")
+		os.makedirs(data_dir, exist_ok=True)
+		self.msg_db = sqlite3.connect(os.path.join(data_dir, "message.db"), check_same_thread=False)
 		self.msg_cursor = self.msg_db.cursor()
 		self.msg_cursor.execute('''
 			CREATE TABLE IF NOT EXISTS messages (
