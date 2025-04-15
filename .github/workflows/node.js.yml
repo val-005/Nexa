@@ -3,18 +3,12 @@ name: Node.js CI
 on:
   push:
     branches: ["dev", "experimental"]
-    paths-ignore:
-       - '.github/**'
-       - '.gitignore'
-       - 'client/**'
-       - 'node/**'
+    paths:
+      - 'bootstrap/**'
   pull_request:
-    paths-ignore:
-       - '.github/**'
-       - '.gitignore'
-       - 'client/**'
-       - 'node/**'
     branches: ["master", "dev"]
+    paths:
+      - 'bootstrap/**'
 
 jobs:
   build:
