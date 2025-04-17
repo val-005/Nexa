@@ -1158,6 +1158,7 @@ class NexaInterface(tk.Tk):
 					return 0.2126 * r + 0.7152 * g + 0.0722 * b		# Calcul de la luminance
 
 				if brightness(primary) > 200:
+					messagebox.showerror("Erreur", "Cette couleur est trop claire. Essaye une autre !")
 					return
 
 				self.primary_color = primary
