@@ -188,6 +188,9 @@ class Node:
                                     )
                                 self.db_co.commit()
 
+                            # Ajoute cette ligne pour relayer le message aux autres noeuds
+                            await self.send_to_nodes(next_message, sender_ws=websocket)
+
                         except ValueError:
                             print(f"Erreur: TTL invalide dans le message '{message}'")
                         except Exception as e:
