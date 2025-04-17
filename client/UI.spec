@@ -1,14 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 
+datas = []
+if sys.platform == 'darwin':
+    datas.append(('NexaIcon.icns', '.'))
+    datas.append(('NexaIcon.png', '.'))
+elif sys.platform == 'win32':
+    datas.append(('NexaIcon.ico', '.'))
+    datas.append(('NexaIcon.png', '.'))
+    datas.append(('message.db', '.'))
+    datas.append(('settings.ini', '.'))
+else:
+    datas.append(('NexaIcon.png', '.'))
+
 a = Analysis(
     ['UI.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('NexaIcon.icns', '.') if sys.platform == 'darwin' else ('NexaIcon.ico', '.') if sys.platform == 'win32' else ('NexaIcon.png', '.'),
-        ('NexaIcon.png', '.'),
-    ],
+    datas=datas,
     hiddenimports=[
         'websockets',
         'websockets.legacy',
