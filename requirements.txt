@@ -1,6 +1,5 @@
 # Required modules for the program
 
-
 # First, open a shell in your Nexa folder.
 
 # We recommend creating and using a virtual environment (venv) before installation :
@@ -17,6 +16,7 @@
 # pip install -r requirements.txt
 
 pillow
+appdirs
 eciespy
 eth-keys
 requests
@@ -24,4 +24,3 @@ ttkthemes
 pyperclip
 websockets
 pyinstaller
-appdirs

@@ -1,5 +1,4 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal
-import sqlite3
+import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, sqlite3
 
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -166,10 +165,10 @@ class Client:
 						print("\nTu ne peux pas avoir un pseudo vide.")
 					elif pseudo == 'quit':
 						self.quitting = True
-						print("Fermeture du programme...\n")
+						print("\nTentative de fermeture du programme...")
 						
 						if platform.system() == "Windows":
-							os.system("taskkill /F /PID " + str(os.getppid()))
+							os.system("taskkill /F /PID " + str(os.getppid()) + " >nul 2>&1")
 						else:
 							os.kill(os.getpid(), signal.SIGTERM)
 							sys.exit(0)
@@ -230,10 +229,10 @@ class Client:
 					
 					if msg == 'quit':
 						self.quitting = True
-						print("Fermeture du programme...\n")
+						print("\nTentative de fermeture du programme...")
 						receive_task.cancel()
 						if platform.system() == "Windows":
-							os.system("taskkill /F /PID " + str(os.getppid()))
+							os.system("taskkill /F /PID " + str(os.getppid()) + " >nul 2>&1")
 						else:
 							os.kill(os.getpid(), signal.SIGTERM)
 							sys.exit(0)
@@ -272,9 +271,9 @@ class Client:
 			self.loop.run_until_complete(self.connect_and_send())
 		except KeyboardInterrupt:
 			self.quitting = True
-			print("\nFermeture du programme...\n")
+			print("\nTentative de fermeture du programme...")
 			if platform.system() == "Windows":
-				os.system("taskkill /F /PID " + str(os.getppid()))
+				os.system("taskkill /F /PID " + str(os.getppid()) + " >nul 2>&1")
 			else:
 				os.kill(os.getpid(), signal.SIGTERM)
 			sys.exit(0)
