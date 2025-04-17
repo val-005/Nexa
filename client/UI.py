@@ -1,4 +1,4 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3, configparser, queue, time, concurrent.futures, tkinter as tk
+import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3, configparser, queue, time, concurrent.futures, re, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
@@ -38,15 +38,54 @@ COLOR_CHOICES = {
 	'light green': ('#00FF00', '#00FF00'),	'vert clair': ('#00FF00', '#00FF00'),
 	'light blue': ('#339CFF', '#1976D2'),	'bleu clair': ('#339CFF', '#1976D2'),
 	'reset': ('#339CFF', '#1976D2'),		'default': ('#339CFF', '#1976D2'),
+	'purple': ('#8e24aa', '#512da8'),		'violet': ('#8e24aa', '#512da8'),
 	'red': ('#D50000', '#B71C1C'),			'rouge': ('#D50000', '#B71C1C'),
 	'yellow': ('#FFEB3B', '#FBC02D'),		'jaune': ('#FFEB3B', '#FBC02D'),
 	'green': ('#388E3C', '#1B5E20'),		'vert': ('#388E3C', '#1B5E20'),
 	'pink': ('#FF69B4', '#C2185B'),			'rose': ('#FF69B4', '#C2185B'),
 	'black': ('#212121', '#000000'),		'noir': ('#212121', '#000000'),
 	'blue': ('#1976d2', '#0d47a1'),			'bleu': ('#1976d2', '#0d47a1'),
-	'violet': ('#8e24aa', '#512da8'),
 	'orange': ('#FF9800', '#F57C00'),
 }
+
+def parse_color_input(color_input):
+	"""
+	Permet d'utiliser /color #hex ou /color rgb(r,g,b) pour choisir la couleur principale.
+	Retourne (primary, secondary) ou None si invalide.
+	"""
+	color_input = color_input.strip()
+	# Hex format: #RRGGBB
+	hex_match = re.fullmatch(r'#([0-9a-fA-F]{6})', color_input)
+	if hex_match:
+		primary = f"#{hex_match.group(1)}"
+		# Génère une couleur secondaire plus foncée
+		def darken(hex_color, factor=0.8):
+			r = int(hex_color[1:3], 16)
+			g = int(hex_color[3:5], 16)
+			b = int(hex_color[5:7], 16)
+			r = int(r * factor)
+			g = int(g * factor)
+			b = int(b * factor)
+			return f"#{r:02x}{g:02x}{b:02x}"
+		secondary = darken(primary)
+		return (primary, secondary)
+	# RGB format: rgb(r,g,b)
+	rgb_match = re.fullmatch(r'rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)', color_input, re.IGNORECASE)
+	if rgb_match:
+		r, g, b = map(int, rgb_match.groups())
+		if all(0 <= v <= 255 for v in (r, g, b)):
+			primary = f"#{r:02x}{g:02x}{b:02x}"
+			def darken(hex_color, factor=0.8):
+				r = int(hex_color[1:3], 16)
+				g = int(hex_color[3:5], 16)
+				b = int(hex_color[5:7], 16)
+				r = int(r * factor)
+				g = int(g * factor)
+				b = int(b * factor)
+				return f"#{r:02x}{g:02x}{b:02x}"
+			secondary = darken(primary)
+			return (primary, secondary)
+	return None
 
 def load_color_settings():
     config = configparser.ConfigParser()
@@ -134,9 +173,7 @@ class Client:
 		self.host = host
 		self.port = port
 		
-		data_dir = user_data_dir("Nexa", "Nexa")
-		os.makedirs(data_dir, exist_ok=True)
-		privkey_path = os.path.join(data_dir, "privkey.key")
+		privkey_path = os.path.join(SCRIPT_DIR, "privkey.key")
 		
 		try:
 			with open(privkey_path, "r") as f:
@@ -1095,9 +1132,40 @@ class NexaInterface(tk.Tk):
 		if not message:
 			return
 		if message.startswith("/color "):
-			color_name = message[7:].strip().lower()
-			if self.set_theme_color(color_name):
+			color_value = message[7:].strip()
+			# Try named color first
+			if self.set_theme_color(color_value.lower()):
 				self.message_to_send.set("")
+				return
+			# Try custom color (hex or rgb)
+			parsed = parse_color_input(color_value)
+			if not parsed:
+				# Accept /color RRGGBB (without #)
+				if re.fullmatch(r'[0-9a-fA-F]{6}', color_value):
+					parsed = parse_color_input("#" + color_value)
+				# Accept /color r,g,b (without rgb())
+				elif re.fullmatch(r'\d{1,3},\d{1,3},\d{1,3}', color_value):
+					parts = color_value.split(",")
+					if all(0 <= int(x) <= 255 for x in parts):
+						parsed = parse_color_input(f"rgb({parts[0]},{parts[1]},{parts[2]})")
+			if parsed:
+				primary, secondary = parsed
+				# Empêche les couleurs trop claires
+				def brightness(hex_color):
+					r = int(hex_color[1:3], 16)
+					g = int(hex_color[3:5], 16)
+					b = int(hex_color[5:7], 16)
+					return 0.2126 * r + 0.7152 * g + 0.0722 * b		# Calcul de la luminance
+
+				if brightness(primary) > 200:
+					return
+
+				self.primary_color = primary
+				self.secondary_color = secondary
+				save_color_settings(primary, secondary)
+				self.apply_theme_colors()
+				self.message_to_send.set("")
+				return
 			return
 		if message == "/reconnect":
 			self._reconnecting = True
@@ -1131,7 +1199,6 @@ class NexaInterface(tk.Tk):
 			messagebox.showerror("Erreur", "Le message est trop long. La limite est de 10000 caractères (espaces non compris).")
 			return
 		
-		self.message_to_send.set("")
 		if hasattr(self.client, 'key_requested') and self.client.key_requested:
 			key = self.recipient_key.get().strip()
 			if key and hasattr(self.client, 'verify_key') and self.client.verify_key(key):
@@ -1141,7 +1208,6 @@ class NexaInterface(tk.Tk):
 				except queue.Empty:
 					print(key)
 			else:
-				messagebox.showerror("Erreur", "La clé publique du destinataire n'est pas valide.\nLa clé doit être au format hexadécimal.")
 				for widget in self.winfo_children():
 					if isinstance(widget, ttk.Entry) and widget.winfo_parent() == str(self.chat_frame.winfo_child("!frame2")):
 						widget.focus_set()
@@ -1149,11 +1215,11 @@ class NexaInterface(tk.Tk):
 			return
 		key = self.recipient_key.get().strip()
 		if not key or not (hasattr(self.client, 'verify_key') and self.client.verify_key(key)):
-			messagebox.showerror("Erreur", "Vérifie la clé publique et réessaie.")
 			return
 		if hasattr(self.client, 'message_to_send') and hasattr(self.client, 'recipient_key'):
 			self.client.message_to_send = message
 			self.client.recipient_key = key
+			self.message_to_send.set("")
 		else:
 			print(message)
 
