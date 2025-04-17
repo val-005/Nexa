@@ -4,11 +4,12 @@ on:
   push:
     branches: ["dev", "experimental"]
     paths:
-       - 'bootstrap/**'
+      - 'bootstrap/**'
   pull_request:
     branches: ["master", "dev"]
     paths:
-     - 'bootstrap/**'
+      - 'bootstrap/**'
+
 jobs:
   build:
     runs-on: ubuntu-latest
