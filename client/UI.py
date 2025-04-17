@@ -32,12 +32,20 @@ node_detection_callback = None
 app = None
 
 COLOR_CHOICES = {
-    "reset": ("#339CFF", "#1976D2"),		"default": ("#339CFF", "#1976D2"),
-	"light blue": ("#339CFF", "#1976D2"),	"bleu clair": ("#339CFF", "#1976D2"),
-    "light green": ("#7ED957", "#388E3C"),	"vert clair": ("#7ED957", "#388E3C"),
-    "green": ("#388E3C", "#145A32"),		"vert": ("#388E3C", "#145A32"),
-    "red": ("#D50000", "#B71C1C"), 			"rouge": ("#D50000", "#B71C1C"),
-    "pink": ("#FF69B4", "#C2185B"),			"rose": ("#FF69B4", "#C2185B")
+	'dark grey': ('#424242', '#212121'),	'gris foncé': ('#424242', '#212121'),
+	'dark blue': ('#1565c0', '#0d47a1'),	'bleu foncé': ('#1565c0', '#0d47a1'),
+	'light green': ('#7ED957', '#388E3C'),	'vert clair': ('#7ED957', '#388E3C'),
+	'light green': ('#00FF00', '#00FF00'),	'vert clair': ('#00FF00', '#00FF00'),
+	'light blue': ('#339CFF', '#1976D2'),	'bleu clair': ('#339CFF', '#1976D2'),
+	'reset': ('#339CFF', '#1976D2'),		'default': ('#339CFF', '#1976D2'),
+	'red': ('#D50000', '#B71C1C'),			'rouge': ('#D50000', '#B71C1C'),
+	'yellow': ('#FFEB3B', '#FBC02D'),		'jaune': ('#FFEB3B', '#FBC02D'),
+	'green': ('#388E3C', '#1B5E20'),		'vert': ('#388E3C', '#1B5E20'),
+	'pink': ('#FF69B4', '#C2185B'),			'rose': ('#FF69B4', '#C2185B'),
+	'black': ('#212121', '#000000'),		'noir': ('#212121', '#000000'),
+	'blue': ('#1976d2', '#0d47a1'),			'bleu': ('#1976d2', '#0d47a1'),
+	'violet': ('#8e24aa', '#512da8'),
+	'orange': ('#FF9800', '#F57C00'),
 }
 
 def load_color_settings():
