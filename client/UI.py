@@ -225,12 +225,11 @@ class Client:
 		db_path = os.path.join(SCRIPT_DIR, "message.db")
 		self.msg_db = sqlite3.connect(db_path, check_same_thread=False)
 
-		# contacts database setup
-		self.contacts_db = sqlite3.connect(os.path.join(data_dir, "contacts.db"), check_same_thread=False)
+		# contacts database setup: always use contacts.db in SCRIPT_DIR
+		self.contacts_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "contacts.db"), check_same_thread=False)
 		self.contacts_cursor = self.contacts_db.cursor()
 		self.contacts_cursor.execute('''CREATE TABLE IF NOT EXISTS contacts (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
+			pseudo TEXT NOT NULL UNIQUE,
 			pubkey TEXT NOT NULL UNIQUE
 		)''')
 		self.contacts_db.commit()
@@ -746,12 +745,11 @@ class NexaInterface(tk.Tk):
 		''')
 		self.msg_db.commit()
 
-		self.contacts_db = sqlite3.connect(os.path.join(data_dir, "contacts.db"), check_same_thread=False)
+		self.contacts_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "contacts.db"), check_same_thread=False)
 		self.contacts_cursor = self.contacts_db.cursor()
 		self.contacts_cursor.execute('''
 			CREATE TABLE IF NOT EXISTS contacts (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				name TEXT NOT NULL,
+				pseudo TEXT NOT NULL UNIQUE,
 				pubkey TEXT NOT NULL UNIQUE
 			)
 		''')
@@ -1071,30 +1069,29 @@ class NexaInterface(tk.Tk):
 		'''
 		Charge les contacts depuis contacts.db.
 		'''
-		self.contacts_cursor.execute("SELECT id, name, pubkey FROM contacts ORDER BY name")
+		self.contacts_cursor.execute("SELECT pseudo, pubkey FROM contacts ORDER BY pseudo")
 		rows = self.contacts_cursor.fetchall()
 		self.contacts = rows
 		if hasattr(self, 'contacts_listbox'):
 			self.contacts_listbox.delete(0, tk.END)
 			for item in rows:
-				_, name, _ = item
-				self.contacts_listbox.insert(tk.END, name)
+				pseudo, _ = item
+				self.contacts_listbox.insert(tk.END, pseudo)
 
-	def add_contact(self, name, pubkey):
+	def add_contact(self, pseudo, pubkey):
 		'''
 		Ajoute un nouveau contact.
 		'''
-		 # validation clé publique
 		if not Client.verify_key(pubkey):
 			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
 			return
-		# block duplicate names
-		self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE name=?", (name,))
+		self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE pseudo=?", (pseudo,))
 		if self.contacts_cursor.fetchone():
-			messagebox.showerror("Erreur", "Un contact avec ce nom existe déjà.")
+			messagebox.showerror("Erreur", "Un contact avec ce pseudo existe déjà.")
 			return
 		try:
-			self.contacts_cursor.execute("INSERT INTO contacts (name, pubkey) VALUES (?, ?)", (name, pubkey))
+			self.contacts_cursor.execute("INSERT INTO contacts (pseudo, pubkey) VALUES (?, ?)",
+										 (pseudo, pubkey))
 			self.contacts_db.commit()
 			self.load_contacts()
 		except sqlite3.IntegrityError:
@@ -1129,12 +1126,12 @@ class NexaInterface(tk.Tk):
 				dialog.iconbitmap(icon_path)
 			except:
 				pass
-		# champs nom et clé
-		ttk.Label(content_frame, text="Nom :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-		name_var = StringVar()
-		name_entry = ttk.Entry(content_frame, textvariable=name_var)
-		name_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
-		name_entry.focus_set()
+		# champs pseudo et clé
+		ttk.Label(content_frame, text="Pseudo :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+		pseudo_var = StringVar()
+		pseudo_entry = ttk.Entry(content_frame, textvariable=pseudo_var)
+		pseudo_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
+		pseudo_entry.focus_set()
 		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
 		pubkey_var = StringVar()
 		pubkey_entry = ttk.Entry(content_frame, textvariable=pubkey_var)
@@ -1144,32 +1141,28 @@ class NexaInterface(tk.Tk):
 		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
 		# validation et ajout de contact
 		def _on_add():
-			name = name_var.get().strip()
+			pseudo = pseudo_var.get().strip()
 			key = pubkey_var.get().strip()
-			if not name:
- 				# messagebox.showerror("Erreur", "Le nom est requis.", parent=dialog)
- 				# name_entry.focus_set()
+			if not pseudo:
 				return
 			if not key:
- 				# messagebox.showerror("Erreur", "La clé publique est requise.", parent=dialog)
- 				# pubkey_entry.focus_set()
 				return
 			if not Client.verify_key(key):
 				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
 				pubkey_entry.focus_set()
 				return
-			if self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE name=?", (name,)).fetchone():
-				messagebox.showerror("Erreur", "Un contact avec ce nom existe déjà.", parent=dialog)
-				name_entry.focus_set()
+			if self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE pseudo=?", (pseudo,)).fetchone():
+				messagebox.showerror("Erreur", "Un contact avec ce pseudo existe déjà.", parent=dialog)
+				pseudo_entry.focus_set()
 				return
 			try:
-				self.contacts_cursor.execute("INSERT INTO contacts (name, pubkey) VALUES (?, ?)", (name, key))
+				self.contacts_cursor.execute("INSERT INTO contacts (pseudo, pubkey) VALUES (?, ?)", (pseudo, key))
 				self.contacts_db.commit()
 				self.load_contacts()
 				dialog.destroy()
 			except sqlite3.IntegrityError:
 				messagebox.showerror("Erreur", "Le contact existe déjà.", parent=dialog)
-				name_entry.focus_set()
+				pseudo_entry.focus_set()
 		if self.is_mac:
 			ttk.Button(btn_frame, text="Ajouter", command=_on_add).pack(side=tk.LEFT, padx=5)
 			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
@@ -1184,7 +1177,7 @@ class NexaInterface(tk.Tk):
 					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
 		dialog.bind("<Return>", lambda e: _on_add())
 		dialog.bind("<Escape>", lambda e: dialog.destroy())		# // Escape
-		name_var.set("")
+		pseudo_var.set("")
 		pubkey_var.set("")
 
 		#dialog.geometry("270x115")		# Taille fenêtre d'ajout des contacts (largeur x hauteur)
@@ -1200,17 +1193,17 @@ class NexaInterface(tk.Tk):
 		if not selection:
 			return
 		index = selection[0]
-		cid, name, pubkey = self.contacts[index]
+		pseudo, pubkey = self.contacts[index]
 		self.current_contact_pubkey = pubkey
-		self.load_message_history_for_contact(name)
+		self.load_message_history_for_contact(pseudo)
 
-	def load_message_history_for_contact(self, contact_name):
+	def load_message_history_for_contact(self, contact_pseudo):
 		'''
 		Charge l'historique des messages pour un contact.
 		'''
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
-		self.msg_cursor.execute("SELECT sender, message, timestamp FROM message WHERE sender=?", (contact_name,))
+		self.msg_cursor.execute("SELECT sender, message, timestamp FROM message WHERE sender=?", (contact_pseudo,))
 		rows = self.msg_cursor.fetchall()
 		for sender, message, timestamp in rows:
 			time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
@@ -1237,9 +1230,9 @@ class NexaInterface(tk.Tk):
 		'''Supprime le contact sélectionné après confirmation.'''
 		sel = self.contacts_listbox.curselection()
 		if not sel: return
-		cid, name, _ = self.contacts[sel[0]]
-		if messagebox.askyesno("Supprimer", f"Supprimer le contact '{name}' ?"):
-			self.contacts_cursor.execute("DELETE FROM contacts WHERE id=?", (cid,))
+		pseudo, _ = self.contacts[sel[0]]
+		if messagebox.askyesno("Supprimer", f"Supprimer le contact '{pseudo}' ?"):
+			self.contacts_cursor.execute("DELETE FROM contacts WHERE pseudo=?", (pseudo,))
 			self.contacts_db.commit()
 			self.load_contacts()
 
@@ -1247,7 +1240,7 @@ class NexaInterface(tk.Tk):
 		'''Ouvre le dialogue de modification pour le contact sélectionné.'''
 		sel = self.contacts_listbox.curselection()
 		if not sel: return
-		cid, name, pubkey = self.contacts[sel[0]]
+		pseudo, pubkey = self.contacts[sel[0]]
 
 		# Empêche l'ouverture de plusieurs fenêtres de modification
 		if getattr(self, 'edit_contact_dialog', None) and self.edit_contact_dialog.winfo_exists():
@@ -1276,11 +1269,11 @@ class NexaInterface(tk.Tk):
 			except:
 				pass
 
-		ttk.Label(content_frame, text="Nom :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-		name_var = StringVar(value=name)
-		name_entry = ttk.Entry(content_frame, textvariable=name_var)
-		name_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
-		name_entry.focus_set()
+		ttk.Label(content_frame, text="Pseudo :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+		pseudo_var = StringVar(value=pseudo)
+		pseudo_entry = ttk.Entry(content_frame, textvariable=pseudo_var)
+		pseudo_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
+		pseudo_entry.focus_set()
 
 		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
 		pubkey_var = StringVar(value=pubkey)
@@ -1291,22 +1284,22 @@ class NexaInterface(tk.Tk):
 		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
 
 		def _on_save():
-			new_name = name_var.get().strip()
+			new_pseudo = pseudo_var.get().strip()
 			new_key = pubkey_var.get().strip()
-			if not new_name or not new_key:
+			if not new_pseudo or not new_key:
 				return
 			if not Client.verify_key(new_key):
 				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
 				pubkey_entry.focus_set()
 				return
 			try:
-				self.contacts_cursor.execute("UPDATE contacts SET name=?, pubkey=? WHERE id=?", (new_name, new_key, cid))
+				self.contacts_cursor.execute("UPDATE contacts SET pseudo=?, pubkey=? WHERE pseudo=?", (new_pseudo, new_key, pseudo))
 				self.contacts_db.commit()
 				self.load_contacts()
 				dialog.destroy()
 			except sqlite3.IntegrityError:
-				messagebox.showerror("Erreur", "Un contact avec ce nom ou cette clé existe déjà.", parent=dialog)
-				name_entry.focus_set()
+				messagebox.showerror("Erreur", "Un contact avec ce pseudo ou cette clé existe déjà.", parent=dialog)
+				pseudo_entry.focus_set()
 
 		if self.is_mac:
 			ttk.Button(btn_frame, text="Enregistrer", command=_on_save).pack(side=tk.LEFT, padx=5)
@@ -1335,6 +1328,7 @@ class NexaInterface(tk.Tk):
 		
 		self.status.set("Connexion en cours...")
 		self.connect_button.config(state=tk.DISABLED)
+					
 		
 		def setup_client():
 			try:
