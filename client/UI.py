@@ -1,5 +1,5 @@
 import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3, configparser, queue, time, concurrent.futures, re, tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, StringVar
+from tkinter import ttk, scrolledtext, messagebox, StringVar, simpledialog
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
@@ -211,6 +211,20 @@ class Client:
 		self.loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(self.loop)
 		self.websocket = None
+
+		data_dir = user_data_dir("Nexa", "Nexa")
+		os.makedirs(data_dir, exist_ok=True)
+		# contacts database setup
+		self.contacts_db = sqlite3.connect(os.path.join(data_dir, "contacts.db"), check_same_thread=False)
+		self.contacts_cursor = self.contacts_db.cursor()
+		self.contacts_cursor.execute('''CREATE TABLE IF NOT EXISTS contacts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			pubkey TEXT NOT NULL UNIQUE
+		)''')
+		self.contacts_db.commit()
+		self.current_contact_pubkey = None
+		self.msg_db = sqlite3.connect(os.path.join(data_dir, "message.db"), check_same_thread=False)
 
 	def verify_key(self, key):
 		'''
@@ -584,15 +598,14 @@ class NexaInterface(tk.Tk):
 	def __init__(self):
 		super().__init__()
 		self.title("Nexa Chat")
-		self.geometry("490x700")			# Taille de la fenêtre
-		self.minsize(490, 600)				# Taille minimale
+		self.geometry("600x700")			# Taille de la fenêtre (largeur x hauteur)
+		self.minsize(600, 600)				# Taille minimale
 
 		self.center_window()
 		self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 		self.is_mac = platform.system() == "Darwin"			# Adapte l'interface en fonction de l'OS utilisé
 		
-		# Forcer le mode clair sur toutes les plateformes
 		if self.is_mac:
 			# Force le mode clair sur macOS
 			self.tk_setPalette(background="#FFFFFF",
@@ -711,8 +724,22 @@ class NexaInterface(tk.Tk):
 			)
 		''')
 		self.msg_db.commit()
+
+		self.contacts_db = sqlite3.connect(os.path.join(data_dir, "contacts.db"), check_same_thread=False)
+		self.contacts_cursor = self.contacts_db.cursor()
+		self.contacts_cursor.execute('''
+			CREATE TABLE IF NOT EXISTS contacts (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL,
+				pubkey TEXT NOT NULL UNIQUE
+			)
+		''')
+		self.contacts_db.commit()
+		self.current_contact_pubkey = None
+
 		self.create_widgets()
 		self.load_message_history()			# Charge l'historique des messages précédents
+		self.load_contacts()				# Charge les contacts
 		self.after(100, self.check_input_needed)
 		self.setup_nodes_detection()
 
@@ -818,30 +845,30 @@ class NexaInterface(tk.Tk):
 		self.chat_frame = ttk.Frame(main_frame)
 
 		# En-tête avec clé publique de l'utilisateur
-		key_frame = ttk.Frame(self.chat_frame, padding=10)
+		key_frame = ttk.Frame(self.chat_frame, padding=(10, 2))
 		key_frame.pack(fill=tk.X)
-		ttk.Label(key_frame, text="Ta clé publique :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
+		ttk.Label(key_frame, text="Ta clé publique :", font=(self.default_font, 9, 'bold')).pack(side=tk.LEFT)
 		
 		key_display_frame = ttk.Frame(key_frame)
-		key_display_frame.pack(fill=tk.X, pady=5)
+		key_display_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=2)
 
 		self.key_label = ttk.Label(key_display_frame,
 							 textvariable=self.key_var,
 							 style='Key.TLabel',
 							 wraplength=0,
-							 anchor='w',
+							 anchor='center',
 							 background='#EEEEEE')
 		
-		self.key_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=5, ipadx=5)
+		self.key_label.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=2, padx=5)
 		
-		# Bouton pour copier la clé
+		# Bouton pour copier la clé (à droite du conteneur)
 		if self.is_mac:
-			copy_btn = ttk.Button(key_display_frame,
+			copy_btn = ttk.Button(key_frame,
 						   text="Copier",
 						   command=self.copy_key,
 						   style='TButton')
 		else:
-			copy_btn = tk.Button(key_display_frame,
+			copy_btn = tk.Button(key_frame,
 						   text="Copier",
 						   command=self.copy_key,
 						   bg=self.primary_color,
@@ -852,11 +879,41 @@ class NexaInterface(tk.Tk):
 						   padx=8, pady=2,
 						   cursor="hand2")
 		
-		copy_btn.pack(side=tk.RIGHT)
-		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
+		copy_btn.pack(side=tk.LEFT, padx=5, pady=2)
+		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=2)
 
-		 # Zone d'affichage des messages
-		self.chat_text = scrolledtext.ScrolledText(self.chat_frame,
+		# clear separation: use PanedWindow horizontal
+		paned = tk.PanedWindow(self.chat_frame, orient=tk.HORIZONTAL, sashwidth=6, sashrelief=tk.RAISED)
+		paned.pack(fill=tk.BOTH, expand=True)
+
+		# Contacts panel as pane
+		contacts_frame = ttk.Frame(paned, padding=10, width=150, relief=tk.GROOVE, borderwidth=1)
+		contacts_frame.pack(side=tk.LEFT, fill=tk.Y)
+		paned.add(contacts_frame)
+		paned.paneconfigure(contacts_frame, minsize=150)
+		contacts_label = ttk.Label(contacts_frame, text="Contacts", font=(self.default_font, 12, 'bold'))
+		contacts_label.pack()
+		self.contacts_listbox = tk.Listbox(contacts_frame)
+		self.contacts_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
+		add_contact_btn = tk.Button(contacts_frame, text="Ajouter", command=self.add_contact_dialog,
+									bg=self.primary_color, fg="white", font=(self.default_font, 9, 'bold'),
+									relief=tk.RAISED, borderwidth=0, cursor="hand2")
+		add_contact_btn.pack(fill=tk.X)
+
+		# menu contextuel sur contacts
+		self.contact_menu = tk.Menu(self, tearoff=0)
+		self.contact_menu.add_command(label="Modifier", command=self.edit_contact)
+		self.contact_menu.add_command(label="Supprimer", command=self.delete_contact)
+		self.contacts_listbox.bind("<<ListboxSelect>>", lambda e: self.on_contact_select())
+		self.contacts_listbox.bind("<Button-3>", self.show_contact_menu)
+
+		 # Chat area as pane
+		chat_area_frame = ttk.Frame(paned)
+		paned.add(chat_area_frame)
+		paned.paneconfigure(chat_area_frame, minsize=300)
+
+		# Zone d'affichage des messages
+		self.chat_text = scrolledtext.ScrolledText(chat_area_frame,
 												wrap=tk.WORD,
 												height=15,
 												font=(self.default_font, 11),
@@ -899,15 +956,14 @@ class NexaInterface(tk.Tk):
 									lmargin1=5, lmargin2=5)
 		
 		# Zone de saisie
-		dest_frame = ttk.Frame(self.chat_frame, padding=10)
+		dest_frame = ttk.Frame(chat_area_frame, padding=10)
 		dest_frame.pack(fill=tk.X)
 		ttk.Label(dest_frame, text="Clé du destinataire :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
 		
 		dest_entry = ttk.Entry(dest_frame, textvariable=self.recipient_key)
 		dest_entry.pack(fill=tk.X, pady=5)
-		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
 		
-		msg_frame = ttk.Frame(self.chat_frame, padding=10)
+		msg_frame = ttk.Frame(chat_area_frame, padding=10)
 		msg_frame.pack(fill=tk.X, side=tk.BOTTOM)
 		ttk.Label(msg_frame, text="Message :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
 
@@ -947,6 +1003,8 @@ class NexaInterface(tk.Tk):
 				buttons.append(copy_btn)
 			if isinstance(send_btn, tk.Button):
 				buttons.append(send_btn)
+			if isinstance(add_contact_btn, tk.Button):
+				buttons.append(add_contact_btn)
 				
 			for btn in buttons:
 				btn.bind("<Enter>", lambda e, b=btn: b.config(bg=self.secondary_color))
@@ -979,6 +1037,189 @@ class NexaInterface(tk.Tk):
 			self.msg_db.commit()
 		except Exception as e:
 			print(f"DEBUG: Erreur lors de la sauvegarde du message: {e}", file=sys.stdout)
+
+	def load_contacts(self):
+		'''
+		Charge les contacts depuis contacts.db.
+		'''
+		self.contacts_cursor.execute("SELECT id, name, pubkey FROM contacts ORDER BY name")
+		rows = self.contacts_cursor.fetchall()
+		self.contacts = rows
+		if hasattr(self, 'contacts_listbox'):
+			self.contacts_listbox.delete(0, tk.END)
+			for item in rows:
+				_, name, _ = item
+				self.contacts_listbox.insert(tk.END, name)
+
+	def add_contact(self, name, pubkey):
+		'''
+		Ajoute un nouveau contact.
+		'''
+		try:
+			self.contacts_cursor.execute("INSERT INTO contacts (name, pubkey) VALUES (?, ?)", (name, pubkey))
+			self.contacts_db.commit()
+			self.load_contacts()
+		except sqlite3.IntegrityError:
+			messagebox.showerror("Erreur", "Contact déjà existant.")
+
+	def add_contact_dialog(self):
+		# fenêtre de saisie
+		dialog = tk.Toplevel(self)
+		dialog.withdraw()  # masquer la fenêtre immédiatement
+		#dialog.overrideredirect(True)  # pas de bordures pendant le positionnement
+		dialog.configure(bg="#FFFFFF")
+		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
+		content_frame.pack(fill=tk.BOTH, expand=True)
+		# permettre aux colonnes de s'étendre
+		content_frame.columnconfigure(1, weight=1)
+		dialog.title("Nouveau contact")
+		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
+		if os.path.exists(icon_path):
+			try:
+				dialog.iconbitmap(icon_path)
+			except:
+				pass
+		# champs nom et clé
+		ttk.Label(content_frame, text="Nom :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+		name_var = StringVar()
+		name_entry = ttk.Entry(content_frame, textvariable=name_var)
+		name_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
+		name_entry.focus_set()
+		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
+		pubkey_var = StringVar()
+		ttk.Entry(content_frame, textvariable=pubkey_var).grid(row=1, column=1, padx=5, pady=5, sticky='we')
+		 # boutons d'action
+		btn_frame = ttk.Frame(content_frame)
+		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+		cmd = lambda nv=name_var, pv=pubkey_var, d=dialog: (
+			self.add_contact(nv.get().strip(), pv.get().strip()) if nv.get().strip() and pv.get().strip() else None,
+			d.destroy()
+		)
+		if self.is_mac:
+			ttk.Button(btn_frame, text="Ajouter", command=cmd).pack(side=tk.LEFT, padx=5)
+			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+		else:
+			tk.Button(btn_frame, text="Ajouter", command=cmd,
+					  bg=self.primary_color, fg="white",
+					  font=(self.default_font, 9, 'bold'),
+					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
+			tk.Button(btn_frame, text="Annuler", command=dialog.destroy,
+					  bg=self.primary_color, fg="white",
+					  font=(self.default_font, 9, 'bold'),
+					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
+		# Bind Enter/Escape to add/cancel
+		dialog.bind("<Return>", lambda e: cmd())
+		dialog.bind("<Escape>", lambda e: dialog.destroy())
+		name_var.set("")
+		pubkey_var.set("")
+		dialog.update_idletasks()
+		w = dialog.winfo_width()
+		h = dialog.winfo_height()
+		x = (dialog.winfo_screenwidth() - w) // 2
+		y = (dialog.winfo_screenheight() - h) // 2
+		dialog.geometry(f"{w}x{h}+{x}+{y}")  # taille initiale adaptée au contenu
+		dialog.minsize(w, h)
+		dialog.overrideredirect(False)  # réactive les bordures
+		dialog.deiconify()  # afficher à la position finale
+		# empêcher le redimensionnement
+		dialog.resizable(False, False)
+		dialog.transient(self)
+		dialog.lift()
+		dialog.focus_force()
+
+	def on_contact_select(self):
+		'''
+		Chargement de la conversation pour le contact sélectionné.
+		'''
+		selection = self.contacts_listbox.curselection()
+		if not selection:
+			return
+		index = selection[0]
+		cid, name, pubkey = self.contacts[index]
+		self.current_contact_pubkey = pubkey
+		self.load_message_history_for_contact(name)
+
+	def load_message_history_for_contact(self, contact_name):
+		'''
+		Charge l'historique des messages pour un contact.
+		'''
+		self.chat_text.config(state=tk.NORMAL)
+		self.chat_text.delete(1.0, tk.END)
+		self.msg_cursor.execute("SELECT sender, message, timestamp FROM messages WHERE sender=?", (contact_name,))
+		rows = self.msg_cursor.fetchall()
+		for sender, message, timestamp in rows:
+			time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
+			tag = "message_received"
+			if sender == self.pseudo.get().strip():
+				tag = "message_sent"
+			self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
+			self.chat_text.insert(tk.END, f"{message}\n", tag)
+		self.chat_text.config(state=tk.DISABLED)
+		self.chat_text.see(tk.END)
+
+	# menu contextuel Actions
+	def show_contact_menu(self, event):
+		selection = self.contacts_listbox.nearest(event.y)
+		self.contacts_listbox.selection_clear(0, tk.END)
+		self.contacts_listbox.selection_set(selection)
+		self.on_contact_select()
+		try:
+			self.contact_menu.tk_popup(event.x_root, event.y_root)
+		finally:
+			self.contact_menu.grab_release()
+
+	def delete_contact(self):
+		'''Supprime le contact sélectionné après confirmation.'''
+		sel = self.contacts_listbox.curselection()
+		if not sel: return
+		cid, name, _ = self.contacts[sel[0]]
+		if messagebox.askyesno("Supprimer", f"Supprimer le contact '{name}' ?"):
+			self.contacts_cursor.execute("DELETE FROM contacts WHERE id=?", (cid,))
+			self.contacts_db.commit()
+			self.load_contacts()
+
+	def edit_contact(self):
+		'''Ouvre le dialogue de modification pour le contact sélectionné.'''
+		sel = self.contacts_listbox.curselection()
+		if not sel: return
+		cid, name, pubkey = self.contacts[sel[0]]
+		self.edit_contact_dialog(cid, name, pubkey)
+
+	def edit_contact_dialog(self, cid, old_name, old_key):
+		'''Dialogue pour modifier un contact existant.'''
+		dialog = tk.Toplevel(self)
+		dialog.title("Modifier contact")
+		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
+		if os.path.exists(icon_path):
+			try: dialog.iconbitmap(icon_path)
+			except: pass
+		content = ttk.Frame(dialog, style='TFrame', padding=10)
+		content.pack(fill=tk.BOTH, expand=True)
+		ttk.Label(content, text="Nom :").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+		name_var = StringVar(value=old_name)
+		ttk.Entry(content, textvariable=name_var).grid(row=0, column=1, padx=5, pady=5)
+		ttk.Label(content, text="Clé publique :").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+		key_var = StringVar(value=old_key)
+		ttk.Entry(content, textvariable=key_var).grid(row=1, column=1, padx=5, pady=5)
+		frm = ttk.Frame(content)
+		frm.grid(row=2, column=0, columnspan=2, pady=10)
+		def save():
+			n = name_var.get().strip(); k = key_var.get().strip()
+			if n and k:
+				self.contacts_cursor.execute("UPDATE contacts SET name=?,pubkey=? WHERE id=?", (n,k,cid))
+				self.contacts_db.commit()
+				self.load_contacts()
+			dialog.destroy()
+		ttk.Button(frm, text="Enregistrer", command=save).pack(side=tk.LEFT, padx=5)
+		ttk.Button(frm, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+		dialog.bind("<Return>", lambda e: save())
+		dialog.bind("<Escape>", lambda e: dialog.destroy())
+		dialog.update_idletasks()
+		w = dialog.winfo_width(); h = dialog.winfo_height()
+		x = (dialog.winfo_screenwidth()-w)//2; y=(dialog.winfo_screenheight()-h)//2
+		dialog.geometry(f"{w}x{h}+{x}+{y}")
+		dialog.minsize(w, h)
+		dialog.transient(self); dialog.lift(); dialog.focus_force()
 
 	def connect(self):
 		'''
@@ -1258,6 +1499,10 @@ class NexaInterface(tk.Tk):
 			self.client_wrapper.stop_client()
 		try:
 			self.msg_db.close()
+		except:
+			pass
+		try:
+			self.contacts_db.close()
 		except:
 			pass
 		self.destroy()
