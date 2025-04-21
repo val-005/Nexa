@@ -213,7 +213,9 @@ class Client:
 		self.websocket = None
 
 		data_dir = user_data_dir("Nexa", "Nexa")
-		os.makedirs(data_dir, exist_ok=True)
+		db_path = os.path.join(SCRIPT_DIR, "message.db")
+		self.msg_db = sqlite3.connect(db_path, check_same_thread=False)
+
 		# contacts database setup
 		self.contacts_db = sqlite3.connect(os.path.join(data_dir, "contacts.db"), check_same_thread=False)
 		self.contacts_cursor = self.contacts_db.cursor()
@@ -224,7 +226,6 @@ class Client:
 		)''')
 		self.contacts_db.commit()
 		self.current_contact_pubkey = None
-		self.msg_db = sqlite3.connect(os.path.join(data_dir, "message.db"), check_same_thread=False)
 
 	def verify_key(self, key):
 		'''
@@ -713,12 +714,12 @@ class NexaInterface(tk.Tk):
 					print(f"DEBUG: L'icône Windows n'a pas pu être chargée : {e}", file=sys.stdout)
 
 		data_dir = user_data_dir("Nexa", "Nexa")
-		os.makedirs(data_dir, exist_ok=True)
-		self.msg_db = sqlite3.connect(os.path.join(data_dir, "message.db"), check_same_thread=False)
+		db_path = os.path.join(SCRIPT_DIR, "message.db")
+		self.msg_db = sqlite3.connect(db_path, check_same_thread=False)
 
 		self.msg_cursor = self.msg_db.cursor()
 		self.msg_cursor.execute('''
-			CREATE TABLE IF NOT EXISTS messages (
+			CREATE TABLE IF NOT EXISTS message (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				sender TEXT,
 				message TEXT,
@@ -1017,7 +1018,7 @@ class NexaInterface(tk.Tk):
 		Charge l'historique des messages stockés dans message.db et les affiche.
 		'''
 		try:
-			self.msg_cursor.execute("SELECT sender, message, timestamp FROM messages ORDER BY id")
+			self.msg_cursor.execute("SELECT sender, message, timestamp FROM message ORDER BY id")
 			rows = self.msg_cursor.fetchall()
 			if rows:
 				self.chat_text.config(state=tk.NORMAL)
@@ -1035,7 +1036,7 @@ class NexaInterface(tk.Tk):
 		Sauvegarde les messages dans message.db.
 		'''
 		try:
-			self.msg_cursor.execute("INSERT INTO messages (sender, message, timestamp) VALUES (?, ?, ?)", (sender, message, timestamp))
+			self.msg_cursor.execute("INSERT INTO message (sender, message, timestamp) VALUES (?, ?, ?)", (sender, message, timestamp))
 			self.msg_db.commit()
 		except Exception as e:
 			print(f"DEBUG: Erreur lors de la sauvegarde du message: {e}", file=sys.stdout)
@@ -1158,7 +1159,7 @@ class NexaInterface(tk.Tk):
 		'''
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
-		self.msg_cursor.execute("SELECT sender, message, timestamp FROM messages WHERE sender=?", (contact_name,))
+		self.msg_cursor.execute("SELECT sender, message, timestamp FROM message WHERE sender=?", (contact_name,))
 		rows = self.msg_cursor.fetchall()
 		for sender, message, timestamp in rows:
 			time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
@@ -1429,7 +1430,7 @@ class NexaInterface(tk.Tk):
 			return
 		if message == "/clear":
 			try:
-				self.msg_cursor.execute("DELETE FROM messages")
+				self.msg_cursor.execute("DELETE FROM message")
 				self.msg_db.commit()
 				self.chat_text.config(state=tk.NORMAL)
 				self.chat_text.delete(1.0, tk.END)
