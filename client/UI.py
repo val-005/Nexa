@@ -597,11 +597,13 @@ class MessageRedirect:
 class NexaInterface(tk.Tk):
 	def __init__(self):
 		super().__init__()
+		self.withdraw()
 		self.title("Nexa Chat")
 		self.geometry("600x700")			# Taille de la fenêtre (largeur x hauteur)
 		self.minsize(600, 600)				# Taille minimale
 
 		self.center_window()
+		self.deiconify()
 		self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 		self.is_mac = platform.system() == "Darwin"			# Adapte l'interface en fonction de l'OS utilisé
@@ -895,10 +897,10 @@ class NexaInterface(tk.Tk):
 		contacts_label.pack()
 		self.contacts_listbox = tk.Listbox(contacts_frame)
 		self.contacts_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
-		add_contact_btn = tk.Button(contacts_frame, text="Ajouter", command=self.add_contact_dialog,
+		contacts_btn = tk.Button(contacts_frame, text="Ajouter", command=self.fenêtre_contacts,
 									bg=self.primary_color, fg="white", font=(self.default_font, 9, 'bold'),
 									relief=tk.RAISED, borderwidth=0, cursor="hand2")
-		add_contact_btn.pack(fill=tk.X)
+		contacts_btn.pack(fill=tk.X)
 
 		# menu contextuel sur contacts
 		self.contact_menu = tk.Menu(self, tearoff=0)
@@ -1003,8 +1005,8 @@ class NexaInterface(tk.Tk):
 				buttons.append(copy_btn)
 			if isinstance(send_btn, tk.Button):
 				buttons.append(send_btn)
-			if isinstance(add_contact_btn, tk.Button):
-				buttons.append(add_contact_btn)
+			if isinstance(contacts_btn, tk.Button):
+				buttons.append(contacts_btn)
 				
 			for btn in buttons:
 				btn.bind("<Enter>", lambda e, b=btn: b.config(bg=self.secondary_color))
@@ -1060,14 +1062,26 @@ class NexaInterface(tk.Tk):
 			self.contacts_db.commit()
 			self.load_contacts()
 		except sqlite3.IntegrityError:
-			messagebox.showerror("Erreur", "Contact déjà existant.")
+			messagebox.showerror("Erreur", "Le contact existe déjà.")
 
-	def add_contact_dialog(self):
-		# fenêtre de saisie
+	def fenêtre_contacts(self):
+		# prevent multiple contact dialogs
+		if getattr(self, 'contact_dialog', None) and self.contact_dialog.winfo_exists():
+			self.contact_dialog.lift()
+			return
 		dialog = tk.Toplevel(self)
-		dialog.withdraw()  # masquer la fenêtre immédiatement
-		#dialog.overrideredirect(True)  # pas de bordures pendant le positionnement
-		dialog.configure(bg="#FFFFFF")
+		self.contact_dialog = dialog
+		dialog.withdraw()
+		dialog.geometry("270x115")
+		dialog.update_idletasks()
+		# center over main window
+		px, py = self.winfo_rootx(), self.winfo_rooty()
+		pw, ph = self.winfo_width(), self.winfo_height()
+		x = px + (pw - 270)//2; y = py + (ph - 115)//2
+		dialog.geometry(f"270x115+{x}+{y}")
+		dialog.deiconify(); dialog.lift(); dialog.focus_force()
+		dialog.minsize(270, 115)									# Taille min de la fenêtre de création de contact
+		dialog.maxsize(700, 115)
 		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
 		content_frame.pack(fill=tk.BOTH, expand=True)
 		# permettre aux colonnes de s'étendre
@@ -1088,18 +1102,27 @@ class NexaInterface(tk.Tk):
 		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
 		pubkey_var = StringVar()
 		ttk.Entry(content_frame, textvariable=pubkey_var).grid(row=1, column=1, padx=5, pady=5, sticky='we')
-		 # boutons d'action
+		# boutons d'action
 		btn_frame = ttk.Frame(content_frame)
 		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
-		cmd = lambda nv=name_var, pv=pubkey_var, d=dialog: (
-			self.add_contact(nv.get().strip(), pv.get().strip()) if nv.get().strip() and pv.get().strip() else None,
-			d.destroy()
-		)
+		# validation et ajout de contact
+		def _on_add():
+			name = name_var.get().strip()
+			key = pubkey_var.get().strip()
+			if not name or not key:
+				return False
+			
+			 # validation du format de la clé sans dépendre du client connecté
+			if not self.verify_key(key):
+				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
+				return False
+			self.add_contact(name, key)
+			dialog.destroy()
 		if self.is_mac:
-			ttk.Button(btn_frame, text="Ajouter", command=cmd).pack(side=tk.LEFT, padx=5)
+			ttk.Button(btn_frame, text="Ajouter", command=_on_add).pack(side=tk.LEFT, padx=5)
 			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 		else:
-			tk.Button(btn_frame, text="Ajouter", command=cmd,
+			tk.Button(btn_frame, text="Ajouter", command=_on_add,
 					  bg=self.primary_color, fg="white",
 					  font=(self.default_font, 9, 'bold'),
 					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
@@ -1107,25 +1130,15 @@ class NexaInterface(tk.Tk):
 					  bg=self.primary_color, fg="white",
 					  font=(self.default_font, 9, 'bold'),
 					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
-		# Bind Enter/Escape to add/cancel
-		dialog.bind("<Return>", lambda e: cmd())
-		dialog.bind("<Escape>", lambda e: dialog.destroy())
+		dialog.bind("<Return>", lambda e: _on_add())
+		dialog.bind("<Escape>", lambda e: dialog.destroy())		# // Escape
 		name_var.set("")
 		pubkey_var.set("")
-		dialog.update_idletasks()
-		w = dialog.winfo_width()
-		h = dialog.winfo_height()
-		x = (dialog.winfo_screenwidth() - w) // 2
-		y = (dialog.winfo_screenheight() - h) // 2
-		dialog.geometry(f"{w}x{h}+{x}+{y}")  # taille initiale adaptée au contenu
-		dialog.minsize(w, h)
-		dialog.overrideredirect(False)  # réactive les bordures
-		dialog.deiconify()  # afficher à la position finale
-		# empêcher le redimensionnement
-		dialog.resizable(False, False)
-		dialog.transient(self)
-		dialog.lift()
-		dialog.focus_force()
+
+		#dialog.geometry("270x115")		# Taille fenêtre d'ajout des contacts (largeur x hauteur)
+		#dialog.minsize(270, 115)
+		#dialog.maxsize(700, 115)
+		dialog.bind("<Destroy>", lambda e: setattr(self, 'contact_dialog', None))
 
 	def on_contact_select(self):
 		'''
