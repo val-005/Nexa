@@ -202,7 +202,16 @@ class Client:
 			self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 			with open(privkey_path, "w") as f:
 				f.write(self.privKey + "\n" + self.pubKey)
+		
+		# Chargement persistant des messages déjà vus (ne jamais réinitialiser)
 		self.seen_messages = set()
+		self.seen_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "seen_messages.db"), check_same_thread=False)
+		self.seen_cursor = self.seen_db.cursor()
+		self.seen_cursor.execute('''CREATE TABLE IF NOT EXISTS seen_messages (msg_id TEXT PRIMARY KEY)''')
+		self.seen_db.commit()
+		for row in self.seen_cursor.execute('SELECT msg_id FROM seen_messages'):
+			self.seen_messages.add(row[0])
+
 		self.quitting = False
 		self.key_requested = False		# Indique si le client attend une clé
 		self.message_to_send = None		# Stocke temporairement le message à envoyer
@@ -247,6 +256,9 @@ class Client:
 		"""
 		try:
 			async for message in self.websocket:
+				# Ajout d'une vérification pour éviter la réception de messages après reconnexion
+				if self.quitting or not self.websocket:
+					return
 				if not message:
 					print("Déconnecté du serveur.")
 					break
@@ -256,12 +268,16 @@ class Client:
 						sender = parts[0]
 						content = parts[1]
 						msg_id = parts[3] if len(parts) > 3 else None
+						 # Vérification persistante pour éviter la réception de messages déjà vus
 						if msg_id and msg_id in self.seen_messages:
 							continue
 						if msg_id:
 							self.seen_messages.add(msg_id)
-							if len(self.seen_messages) > 1000:
-								self.seen_messages.pop()
+							try:
+								self.seen_cursor.execute('INSERT OR IGNORE INTO seen_messages (msg_id) VALUES (?)', (msg_id,))
+								self.seen_db.commit()
+							except Exception:
+								pass
 						msg = decrypt(self.privKey, bytes.fromhex(content))
 						if str(msg).startswith("b'") and str(msg).endswith("'"):
 							msg = ast.literal_eval(str(msg)).decode()
@@ -822,6 +838,8 @@ class NexaInterface(tk.Tk):
 		pseudo_entry = ttk.Entry(form_frame, textvariable=self.pseudo, font=(self.default_font, 12))
 		pseudo_entry.pack(fill=tk.X, pady=(0, 20))
 		pseudo_entry.bind("<Return>", lambda event: self.connect() if self.connect_button['state'] != tk.DISABLED else None)
+		# Ajout du focus automatique sur le champ pseudo lors du lancement
+		self.after(100, lambda: pseudo_entry.focus_set())
 		ttk.Label(form_frame, textvariable=self.nodes_var).pack(anchor=tk.W, pady=(0, 10))
 		
 		# Bouton de connexion avec style adapté selon la plateforme
@@ -1230,43 +1248,81 @@ class NexaInterface(tk.Tk):
 		sel = self.contacts_listbox.curselection()
 		if not sel: return
 		cid, name, pubkey = self.contacts[sel[0]]
-		self.edit_contact_dialog(cid, name, pubkey)
 
-	def edit_contact_dialog(self, cid, old_name, old_key):
-		'''Dialogue pour modifier un contact existant.'''
+		# Empêche l'ouverture de plusieurs fenêtres de modification
+		if getattr(self, 'edit_contact_dialog', None) and self.edit_contact_dialog.winfo_exists():
+			self.edit_contact_dialog.lift()
+			return
 		dialog = tk.Toplevel(self)
+		self.edit_contact_dialog = dialog
+		dialog.withdraw()
+		dialog.geometry("270x115")
+		dialog.update_idletasks()
+		px, py = self.winfo_rootx(), self.winfo_rooty()
+		pw, ph = self.winfo_width(), self.winfo_height()
+		x = px + (pw - 270)//2; y = py + (ph - 115)//2
+		dialog.geometry(f"270x115+{x}+{y}")
+		dialog.deiconify(); dialog.lift(); dialog.focus_force()
+		dialog.minsize(270, 115)
+		dialog.maxsize(700, 115)
+		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
+		content_frame.pack(fill=tk.BOTH, expand=True)
+		content_frame.columnconfigure(1, weight=1)
 		dialog.title("Modifier contact")
 		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
 		if os.path.exists(icon_path):
-			try: dialog.iconbitmap(icon_path)
-			except: pass
-		content = ttk.Frame(dialog, style='TFrame', padding=10)
-		content.pack(fill=tk.BOTH, expand=True)
-		ttk.Label(content, text="Nom :").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-		name_var = StringVar(value=old_name)
-		ttk.Entry(content, textvariable=name_var).grid(row=0, column=1, padx=5, pady=5)
-		ttk.Label(content, text="Clé publique :").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-		key_var = StringVar(value=old_key)
-		ttk.Entry(content, textvariable=key_var).grid(row=1, column=1, padx=5, pady=5)
-		frm = ttk.Frame(content)
-		frm.grid(row=2, column=0, columnspan=2, pady=10)
-		def save():
-			n = name_var.get().strip(); k = key_var.get().strip()
-			if n and k:
-				self.contacts_cursor.execute("UPDATE contacts SET name=?,pubkey=? WHERE id=?", (n,k,cid))
+			try:
+				dialog.iconbitmap(icon_path)
+			except:
+				pass
+
+		ttk.Label(content_frame, text="Nom :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+		name_var = StringVar(value=name)
+		name_entry = ttk.Entry(content_frame, textvariable=name_var)
+		name_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
+		name_entry.focus_set()
+
+		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
+		pubkey_var = StringVar(value=pubkey)
+		pubkey_entry = ttk.Entry(content_frame, textvariable=pubkey_var)
+		pubkey_entry.grid(row=1, column=1, padx=5, pady=5, sticky='we')
+
+		btn_frame = ttk.Frame(content_frame)
+		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+
+		def _on_save():
+			new_name = name_var.get().strip()
+			new_key = pubkey_var.get().strip()
+			if not new_name or not new_key:
+				return
+			if not Client.verify_key(new_key):
+				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
+				pubkey_entry.focus_set()
+				return
+			try:
+				self.contacts_cursor.execute("UPDATE contacts SET name=?, pubkey=? WHERE id=?", (new_name, new_key, cid))
 				self.contacts_db.commit()
 				self.load_contacts()
-			dialog.destroy()
-		ttk.Button(frm, text="Enregistrer", command=save).pack(side=tk.LEFT, padx=5)
-		ttk.Button(frm, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-		dialog.bind("<Return>", lambda e: save())
+				dialog.destroy()
+			except sqlite3.IntegrityError:
+				messagebox.showerror("Erreur", "Un contact avec ce nom ou cette clé existe déjà.", parent=dialog)
+				name_entry.focus_set()
+
+		if self.is_mac:
+			ttk.Button(btn_frame, text="Enregistrer", command=_on_save).pack(side=tk.LEFT, padx=5)
+			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+		else:
+			tk.Button(btn_frame, text="Enregistrer", command=_on_save,
+					  bg=self.primary_color, fg="white",
+					  font=(self.default_font, 9, 'bold'),
+					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
+			tk.Button(btn_frame, text="Annuler", command=dialog.destroy,
+					  bg=self.primary_color, fg="white",
+					  font=(self.default_font, 9, 'bold'),
+					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
+		dialog.bind("<Return>", lambda e: _on_save())
 		dialog.bind("<Escape>", lambda e: dialog.destroy())
-		dialog.update_idletasks()
-		w = dialog.winfo_width(); h = dialog.winfo_height()
-		x = (dialog.winfo_screenwidth()-w)//2; y=(dialog.winfo_screenheight()-h)//2
-		dialog.geometry(f"{w}x{h}+{x}+{y}")
-		dialog.minsize(w, h)
-		dialog.transient(self); dialog.lift(); dialog.focus_force()
 
 	def connect(self):
 		'''
@@ -1312,7 +1368,7 @@ class NexaInterface(tk.Tk):
 		self.login_frame.pack_forget()
 		self.chat_frame.pack(fill=tk.BOTH, expand=True)
 		self.connected = True
-		# Affiche la date (au centre) uniquement si ce n'est pas un /reconnect
+		# Affiche la date après les messages d'avant la déconnexion
 		if not hasattr(self, '_reconnecting') or not self._reconnecting:
 			current_date = datetime.now().strftime("%A %d %B %Y")
 			current_date = current_date[0].upper() + current_date[1:]
@@ -1320,8 +1376,9 @@ class NexaInterface(tk.Tk):
 			self.chat_text.insert(tk.END, "\n", "system_message")
 			self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
 			self.chat_text.config(state=tk.DISABLED)
-		self.msg_entry.focus_set()
+			self.chat_text.see(tk.END)
 		self._reconnecting = False
+		self.msg_entry.focus_set()
 
 	def show_login_interface(self):
 		'''
@@ -1503,7 +1560,6 @@ class NexaInterface(tk.Tk):
 			return
 		key = self.recipient_key.get().strip()
 		if not key:
-			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
 			return
 		if not (hasattr(self.client, 'verify_key') and self.client.verify_key(key)):
 			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
@@ -1553,6 +1609,10 @@ class NexaInterface(tk.Tk):
 			pass
 		try:
 			self.contacts_db.close()
+		except:
+			pass
+		try:
+			self.seen_db.close()
 		except:
 			pass
 		self.destroy()
