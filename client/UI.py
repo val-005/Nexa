@@ -227,16 +227,18 @@ class Client:
 		self.contacts_db.commit()
 		self.current_contact_pubkey = None
 
-	def verify_key(self, key):
+	@staticmethod
+	def verify_key(key):
 		'''
-		Vérifie si une clé publique est au bon format.
+		Vérifie si une clé publique est au bon format hexadécimal compressé (66 hex).
 		'''
-		try:
-			if key and isinstance(key, str) and key.strip():
+		if isinstance(key, str) and key.strip() and len(key) == 66:
+			try:
+				bytes.fromhex(key)
 				return True
-			return False
-		except:
-			return False
+			except ValueError:
+				return False
+		return False
 
 	async def receive_messages(self):
 		"""
@@ -294,7 +296,7 @@ class Client:
 				else:
 					new_msg += lettre
 
-			if not self.verify_key(recipient_key):
+			if not Client.verify_key(recipient_key):
 				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
 				return False
 			msg_id = str(uuid.uuid4())
@@ -931,7 +933,8 @@ class NexaInterface(tk.Tk):
 									font=(self.default_font, 11),
 									spacing1=0, spacing2=0, spacing3=0,
 									lmargin1=5, lmargin2=5,
-									foreground="black")
+									foreground="black",
+									wrap=tk.WORD)  # Ensure long messages wrap properly
 
 		self.chat_text.tag_configure("system_message_center",
 									foreground="#757575",
@@ -943,7 +946,8 @@ class NexaInterface(tk.Tk):
 									font=(self.default_font, 11),
 									spacing1=0, spacing2=0, spacing3=0,
 									lmargin1=5, lmargin2=5,
-									foreground="black")
+									foreground="black",
+									wrap=tk.WORD)  # Ensure long messages wrap properly
 		
 		self.chat_text.tag_configure("sender_name",
 									font=(self.default_font, 10, 'bold'),
@@ -1033,9 +1037,13 @@ class NexaInterface(tk.Tk):
 
 	def save_message(self, sender, message, timestamp):
 		'''
-		Sauvegarde les messages dans message.db.
+		Sauvegarde les messages dans message.db uniquement s'ils n'existent pas déjà.
 		'''
 		try:
+			# Vérifie si le message existe déjà
+			self.msg_cursor.execute("SELECT 1 FROM message WHERE sender=? AND message=? AND timestamp=?", (sender, message, timestamp))
+			if self.msg_cursor.fetchone():
+				return  # Ne pas enregistrer de doublons
 			self.msg_cursor.execute("INSERT INTO message (sender, message, timestamp) VALUES (?, ?, ?)", (sender, message, timestamp))
 			self.msg_db.commit()
 		except Exception as e:
@@ -1058,6 +1066,15 @@ class NexaInterface(tk.Tk):
 		'''
 		Ajoute un nouveau contact.
 		'''
+		 # validation clé publique
+		if not Client.verify_key(pubkey):
+			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
+			return
+		# block duplicate names
+		self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE name=?", (name,))
+		if self.contacts_cursor.fetchone():
+			messagebox.showerror("Erreur", "Un contact avec ce nom existe déjà.")
+			return
 		try:
 			self.contacts_cursor.execute("INSERT INTO contacts (name, pubkey) VALUES (?, ?)", (name, pubkey))
 			self.contacts_db.commit()
@@ -1102,7 +1119,8 @@ class NexaInterface(tk.Tk):
 		name_entry.focus_set()
 		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
 		pubkey_var = StringVar()
-		ttk.Entry(content_frame, textvariable=pubkey_var).grid(row=1, column=1, padx=5, pady=5, sticky='we')
+		pubkey_entry = ttk.Entry(content_frame, textvariable=pubkey_var)
+		pubkey_entry.grid(row=1, column=1, padx=5, pady=5, sticky='we')
 		# boutons d'action
 		btn_frame = ttk.Frame(content_frame)
 		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
@@ -1110,15 +1128,30 @@ class NexaInterface(tk.Tk):
 		def _on_add():
 			name = name_var.get().strip()
 			key = pubkey_var.get().strip()
-			if not name or not key:
-				return False
-			
-			 # validation du format de la clé sans dépendre du client connecté
-			if not self.verify_key(key):
-				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
-				return False
-			self.add_contact(name, key)
-			dialog.destroy()
+			if not name:
+ 				# messagebox.showerror("Erreur", "Le nom est requis.", parent=dialog)
+ 				# name_entry.focus_set()
+				return
+			if not key:
+ 				# messagebox.showerror("Erreur", "La clé publique est requise.", parent=dialog)
+ 				# pubkey_entry.focus_set()
+				return
+			if not Client.verify_key(key):
+				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
+				pubkey_entry.focus_set()
+				return
+			if self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE name=?", (name,)).fetchone():
+				messagebox.showerror("Erreur", "Un contact avec ce nom existe déjà.", parent=dialog)
+				name_entry.focus_set()
+				return
+			try:
+				self.contacts_cursor.execute("INSERT INTO contacts (name, pubkey) VALUES (?, ?)", (name, key))
+				self.contacts_db.commit()
+				self.load_contacts()
+				dialog.destroy()
+			except sqlite3.IntegrityError:
+				messagebox.showerror("Erreur", "Le contact existe déjà.", parent=dialog)
+				name_entry.focus_set()
 		if self.is_mac:
 			ttk.Button(btn_frame, text="Ajouter", command=_on_add).pack(side=tk.LEFT, padx=5)
 			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
@@ -1419,7 +1452,6 @@ class NexaInterface(tk.Tk):
 				self.primary_color = primary
 				self.secondary_color = secondary
 				save_color_settings(primary, secondary)
-				self.apply_theme_colors()
 				self.message_to_send.set("")
 				return
 			return
@@ -1470,7 +1502,11 @@ class NexaInterface(tk.Tk):
 						break
 			return
 		key = self.recipient_key.get().strip()
-		if not key or not (hasattr(self.client, 'verify_key') and self.client.verify_key(key)):
+		if not key:
+			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
+			return
+		if not (hasattr(self.client, 'verify_key') and self.client.verify_key(key)):
+			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
 			return
 		if hasattr(self.client, 'message_to_send') and hasattr(self.client, 'recipient_key'):
 			self.client.message_to_send = message
