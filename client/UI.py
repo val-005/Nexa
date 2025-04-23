@@ -1,5 +1,5 @@
 import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3, configparser, queue, time, concurrent.futures, re, tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, StringVar, simpledialog
+from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
 from datetime import datetime
@@ -30,6 +30,7 @@ except:
 available_nodes = []
 node_detection_callback = None
 app = None
+stop_async_getnodes = False  # Ajout d'un flag global pour stopper la recherche des nœuds
 
 COLOR_CHOICES = {
 	'dark grey': ('#424242', '#212121'),	'gris foncé': ('#424242', '#212121'),
@@ -119,18 +120,12 @@ def signal_handler(sig, frame):
 	Ferme le programme quand Crtl+C est saisi.
 	'''
 	global app
-	if app:
-		app.destroy()
 	try:
-		if platform.system() == 'Windows':
-			os.system(f'taskkill /PID {os.getpid()} /F >nul 2>&1')
+		if app and hasattr(app, 'destroy'):
+			app.destroy()
 	except Exception:
 		pass
-	try:
-		os.kill(os.getpid(), 9)
-	except Exception:
-		pass
-	sys.exit(0)
+	os._exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -147,7 +142,7 @@ def get_nodes():
 			node_detection_callback(nodes)
 		return nodes
 	except Exception as e:
-		print(f"Erreur lors de la recherche des nœuds: {str(e)}")
+		messagebox.showerror(f"Erreur", "Erreur lors de la recherche des nœuds. ({e})")
 		if node_detection_callback:
 			node_detection_callback([])
 		return []
@@ -156,11 +151,15 @@ def async_getnodes(interval=60):
 	'''
 	Exécute la fonction get_nodes toutes les 60 secondes.
 	'''
-	global available_nodes
+	global available_nodes, stop_async_getnodes
+	if stop_async_getnodes:
+		return
 	available_nodes = get_nodes()
 	if len(available_nodes) == 0:
-		print("Aucun noeud en ligne.")
-	threading.Timer(interval, async_getnodes, [interval]).start()
+		messagebox.showerror("Erreur", "Aucun noeud en ligne.")
+	# Ne relance le timer que si l'app n'est pas en train de fermer
+	if not stop_async_getnodes:
+		threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
 	def __init__(self, host: str, port: int = 0):
@@ -190,7 +189,7 @@ class Client:
 						self.privKey = lines[0]
 						self.pubKey = lines[1]
 					else:
-						print("Format de fichier de clés incorrect, régénération...")
+						messagebox.showerror("Erreur", "Format de fichier de clés incorrect, elle vont être regénéréees.")
 						self.keys = generate_eth_key()
 						self.privKey = self.keys.to_hex()
 						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
@@ -259,7 +258,7 @@ class Client:
 				if self.quitting or not self.websocket:
 					return
 				if not message:
-					print("Déconnecté du serveur.")
+					messagebox.showerror("Erreur", "Déconnecté du serveur.")
 					break
 				if "register;" not in message:
 					try:
@@ -291,17 +290,17 @@ class Client:
 						pass
 		except websockets.exceptions.ConnectionClosed:
 			if not self.quitting:
-				print("Connexion au serveur perdue.")
+				messagebox.showerror("Erreur", "Connexion au serveur perdue.")
 		except Exception as e:
 			if not self.quitting:
-				print(f"Erreur lors de la réception du message. (\"{e}\")")
+				messagebox.showerror(f"Erreur", "Erreur lors de la réception du message. ({e})")
 
 	async def send_message_with_key(self, message, recipient_key, pseudo):
 		'''
 		Méthode pour envoyer un message directement avec une clé (spécifiquement pour l'interface).
 		'''
 		if not self.websocket:
-			print("Tu n'es pas connecté au serveur.")
+			messagebox.showerror("Erreur", "Tu n'es pas connecté au serveur.")
 			return False
 		try:
 			new_msg = ""
@@ -321,7 +320,7 @@ class Client:
 			print(f"Toi: {message}")					# Simule la réception de son propre message avec "Toi:" au lieu du pseudo)
 			return True
 		except Exception as e:
-			print(f"Erreur lors de l'envoi du message : {str(e)}")
+			messagebox.showerror(f"Erreur", "Erreur lors de l'envoi du message. ({e})")
 			return False
 
 	async def connect_and_send(self):
@@ -345,7 +344,7 @@ class Client:
 				while not pseudo.strip():
 					pseudo = input("Entrez votre pseudo : ")
 					if not pseudo.strip():
-						print("\nTu ne peux pas avoir un pseudo vide.")
+						messagebox.showerror("Error", "Tu ne peux pas avoir un pseudo vide.")
 				registration_msg = f"register;client;{pseudo};{self.pubKey}"
 				await websocket.send(registration_msg)
 				asyncio.create_task(self.receive_messages())
@@ -367,7 +366,7 @@ class Client:
 							msg_id = str(uuid.uuid4())
 							msgEncrypt = encrypt(recipient_key, new_msg.encode())	# Chiffre le message
 							await websocket.send(f"{pseudo};{msgEncrypt.hex()};{recipient_key};{msg_id}")
-							print(f"Vous: {message}")
+							print(f"Toi: {message}")
 							message_queue.task_done()
 							await asyncio.sleep(0.01)	# Légère pause pour éviter de surcharger le serveur
 						except asyncio.CancelledError:
@@ -390,7 +389,7 @@ class Client:
 							if self.verify_key(key):
 								await message_queue.put((msg, key))
 							else:
-								print("Erreur: Clé du destinataire invalide.")
+								messagebox.showerror("Erreur", "Clé du destinataire invalide.")
 						try:
 							await asyncio.sleep(0.05)
 						except asyncio.CancelledError:
@@ -404,12 +403,12 @@ class Client:
 					
 		except websockets.exceptions.ConnectionClosed:
 			if not self.quitting:
-				print("Erreur: Connexion fermée par le serveur.")
+				messagebox.showerror("Erreur", "Connexion fermée par le serveur.")
 		except asyncio.CancelledError:
 			pass
 		except Exception as e:
 			if not self.quitting:
-				print(f"Erreur: Problème de connexion au serveur. (\"{e}\")")
+				messagebox.showerror(f"Erreur", "Problème de connexion au serveur. ({e})")
 
 	async def keep_connection_alive(self, interval=30):
 		try:
@@ -422,17 +421,17 @@ class Client:
 						await self.reconnect()			# Tentative de reconnexion si le ping échoue
 		except Exception as e:
 			if not self.quitting:
-				print(f"Erreur inattendue dans le maintien de la connexion : {e}")
+				messagebox.showerror(f"Erreur", "Erreur inattendue dans le maintien de la connexion. ({e})")
 
 	async def reconnect(self):
 		'''
 		Tente de se reconnecter au serveur en cas de déconnexion.
 		'''
 		try:
-			print("Tentative de reconnexion...")
+			#print("Tentative de reconnexion...")
 			await self.connect_and_send()
 		except Exception as e:
-			print(f"Échec de la reconnexion : {e}")
+			messagebox.showerror(f"Erreur", "Échec de la reconnexion. ({e})")
 
 	def start(self):
 		'''
@@ -442,7 +441,7 @@ class Client:
 			self.loop.run_until_complete(self.connect_and_send())
 		except KeyboardInterrupt:
 			self.quitting = True
-			print("\nFermeture du programme...\n")
+			#print("\nFermeture du programme...\n")
 			if platform.system() == "Windows":
 				os.system("taskkill /F /PID " + str(os.getppid()))
 			else:
@@ -474,7 +473,7 @@ class WrapperClient:
         except Exception as e:
             # Ne pas afficher l'erreur spécifique de la boucle événementielle
             if "Event loop stopped before Future completed" not in str(e):
-                print(f"Erreur dans le client: {e}")
+                messagebox.showerror(f"Erreur", "Erreur dans le client. ({e})")
         finally:
             self.client = None
         
@@ -546,10 +545,17 @@ class MessageRedirect:
 		if "Erreur" in string or "erreur" in string:
 			self.queue.put(("error", string))
 		elif "Erreur lors de la recherche des nœuds" in string or ("Erreur:" in string and "nœud" in string.lower()):
-			print("DEBUG:", string, file=self.original_stdout)
+			messagebox.showerror("Erreur", "DEBUG :", string, file=self.original_stdout)
 		else:
+			# Empêcher l'affichage des messages reçus si aucun contact n'est sélectionné
 			if ": " in string and not any(x in string for x in ("===", "Ta clé", "Connexion")):
 				try:
+					# On tente de récupérer le current_contact_pubkey depuis la fenêtre principale
+					parent = self.text_widget.master
+					while parent and not hasattr(parent, 'current_contact_pubkey'):
+						parent = getattr(parent, 'master', None)
+					if parent and getattr(parent, 'current_contact_pubkey', None) is None:
+						return  # Ne rien afficher si aucun contact sélectionné
 					parts = string.split(": ", 1)
 					if len(parts) >= 2:
 						sender, message = parts[0], parts[1].strip()
@@ -594,7 +600,6 @@ class MessageRedirect:
 										self.text_widget.insert(tk.END, f"{message.strip()}", "message_received")
 									self.text_widget.insert(tk.END, "\n", "")
 							except Exception as e:
-								print(f"DEBUG: Erreur format message: {e}", file=self.original_stdout)
 								self.text_widget.insert(tk.END, string)
 						else:
 							if not ("erreur" in string.lower() or "error" in string.lower()):
@@ -728,7 +733,7 @@ class NexaInterface(tk.Tk):
 				try:
 					self.iconbitmap(icon_path)
 				except Exception as e:
-					print(f"DEBUG: L'icône Windows n'a pas pu être chargée : {e}", file=sys.stdout)
+					messagebox.showerror(f"Erreur", "L'icône Windows n'a pas pu être chargée. ({e})", file=sys.stdout)
 
 		data_dir = user_data_dir("Nexa", "Nexa")
 		db_path = os.path.join(SCRIPT_DIR, "message.db")
@@ -908,18 +913,19 @@ class NexaInterface(tk.Tk):
 		paned.pack(fill=tk.BOTH, expand=True)
 
 		# Contacts panel as pane
-		contacts_frame = ttk.Frame(paned, padding=10, width=150, relief=tk.GROOVE, borderwidth=1)
+		contacts_frame = ttk.Frame(paned, padding=2, width=150, relief=tk.GROOVE, borderwidth=1)
 		contacts_frame.pack(side=tk.LEFT, fill=tk.Y)
 		paned.add(contacts_frame)
 		paned.paneconfigure(contacts_frame, minsize=150)
 		contacts_label = ttk.Label(contacts_frame, text="Contacts", font=(self.default_font, 12, 'bold'))
-		contacts_label.pack()
-		self.contacts_listbox = tk.Listbox(contacts_frame)
-		self.contacts_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
+		contacts_label.pack(pady=(2, 2))
+		self.contacts_listbox = tk.Listbox(contacts_frame, font=(self.default_font, 10, 'normal'))
+		self.contacts_listbox.pack(fill=tk.BOTH, expand=True, pady=(2, 2))
+		self.contacts_listbox.config(selectbackground=self.contacts_listbox['bg'], selectforeground=self.contacts_listbox['fg'])
 		contacts_btn = tk.Button(contacts_frame, text="Ajouter", command=self.fenêtre_contacts,
 									bg=self.primary_color, fg="white", font=(self.default_font, 9, 'bold'),
 									relief=tk.RAISED, borderwidth=0, cursor="hand2")
-		contacts_btn.pack(fill=tk.X)
+		contacts_btn.pack(fill=tk.X, pady=(2, 2))
 
 		# menu contextuel sur contacts
 		self.contact_menu = tk.Menu(self, tearoff=0)
@@ -979,16 +985,10 @@ class NexaInterface(tk.Tk):
 									lmargin1=5, lmargin2=5)
 		
 		# Zone de saisie
-		dest_frame = ttk.Frame(chat_area_frame, padding=10)
-		dest_frame.pack(fill=tk.X)
-		ttk.Label(dest_frame, text="Clé du destinataire :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
-		
-		dest_entry = ttk.Entry(dest_frame, textvariable=self.recipient_key)
-		dest_entry.pack(fill=tk.X, pady=5)
-		
 		msg_frame = ttk.Frame(chat_area_frame, padding=10)
 		msg_frame.pack(fill=tk.X, side=tk.BOTTOM)
-		ttk.Label(msg_frame, text="Message :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
+		# Suppression du label "Message :"
+		# ttk.Label(msg_frame, text="Message :", font=(self.default_font, 9, 'bold')).pack(anchor=tk.W)
 
 		input_frame = ttk.Frame(msg_frame)
 		input_frame.pack(fill=tk.X, pady=5)
@@ -996,7 +996,7 @@ class NexaInterface(tk.Tk):
 		self.msg_entry = ttk.Entry(input_frame, textvariable=self.message_to_send, font=(self.default_font, 10))
 		self.msg_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 		self.msg_entry.bind("<Return>", lambda e: self.send_message())
-		
+
 		# Bouton d'envoi
 		if self.is_mac:
 			send_btn = ttk.Button(input_frame,
@@ -1040,30 +1040,31 @@ class NexaInterface(tk.Tk):
 		try:
 			self.msg_cursor.execute("SELECT sender, message, timestamp FROM message ORDER BY id")
 			rows = self.msg_cursor.fetchall()
-			if rows:
-				self.chat_text.config(state=tk.NORMAL)
-				for sender, message, timestamp in rows:
-					time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
-					self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
-					self.chat_text.insert(tk.END, f"{message}\n", "message_received")
-				self.chat_text.config(state=tk.DISABLED)
-				self.chat_text.see(tk.END)					# Défilement automatique vers le bas (pour voir les messages récents)
+			self.chat_text.config(state=tk.NORMAL)
+			self.chat_text.delete(1.0, tk.END)
+			for sender, message, timestamp in rows:
+				time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
+				self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
+				self.chat_text.insert(tk.END, f"{message}\n", "message_received")
+			self.chat_text.config(state=tk.DISABLED)
+			self.chat_text.see(tk.END)
 		except Exception as e:
-			print(f"DEBUG: Erreur lors du chargement de l'historique: {e}", file=sys.stdout)
+			messagebox.showerror(f"Erreur", "Erreur lors du chargement de l'historique. ({e})", file=sys.stdout)
 
 	def save_message(self, sender, message, timestamp):
 		'''
 		Sauvegarde les messages dans message.db uniquement s'ils n'existent pas déjà.
 		'''
+		if sender.strip().lower() in ("vous", "toi"):
+			sender = "Toi"
 		try:
-			# Vérifie si le message existe déjà
 			self.msg_cursor.execute("SELECT 1 FROM message WHERE sender=? AND message=? AND timestamp=?", (sender, message, timestamp))
 			if self.msg_cursor.fetchone():
-				return  # Ne pas enregistrer de doublons
+				return
 			self.msg_cursor.execute("INSERT INTO message (sender, message, timestamp) VALUES (?, ?, ?)", (sender, message, timestamp))
 			self.msg_db.commit()
 		except Exception as e:
-			print(f"DEBUG: Erreur lors de la sauvegarde du message: {e}", file=sys.stdout)
+			messagebox.showerror(f"Erreur", "Erreur lors de la sauvegarde du message. ({e})", file=sys.stdout)
 
 	def load_contacts(self):
 		'''
@@ -1077,6 +1078,13 @@ class NexaInterface(tk.Tk):
 			for item in rows:
 				pseudo, _ = item
 				self.contacts_listbox.insert(tk.END, pseudo)
+		# Ajout : si plus de contacts, efface la zone de chat et masque la zone d'envoi
+		if len(rows) == 0:
+			self.chat_text.config(state=tk.NORMAL)
+			self.chat_text.delete(1.0, tk.END)
+			self.chat_text.config(state=tk.DISABLED)
+			self.current_contact_pubkey = None
+			self.msg_entry.master.pack_forget()
 
 	def add_contact(self, pseudo, pubkey):
 		'''
@@ -1090,8 +1098,7 @@ class NexaInterface(tk.Tk):
 			messagebox.showerror("Erreur", "Un contact avec ce pseudo existe déjà.")
 			return
 		try:
-			self.contacts_cursor.execute("INSERT INTO contacts (pseudo, pubkey) VALUES (?, ?)",
-										 (pseudo, pubkey))
+			self.contacts_cursor.execute("INSERT INTO contacts (pseudo, pubkey) VALUES (?, ?)", (pseudo, pubkey))
 			self.contacts_db.commit()
 			self.load_contacts()
 		except sqlite3.IntegrityError:
@@ -1101,6 +1108,8 @@ class NexaInterface(tk.Tk):
 		# prevent multiple contact dialogs
 		if getattr(self, 'contact_dialog', None) and self.contact_dialog.winfo_exists():
 			self.contact_dialog.lift()
+			self.contact_dialog.focus_force()
+			self.contact_dialog.attributes('-topmost', 1)
 			return
 		dialog = tk.Toplevel(self)
 		self.contact_dialog = dialog
@@ -1113,6 +1122,7 @@ class NexaInterface(tk.Tk):
 		x = px + (pw - 270)//2; y = py + (ph - 115)//2
 		dialog.geometry(f"270x115+{x}+{y}")
 		dialog.deiconify(); dialog.lift(); dialog.focus_force()
+		dialog.attributes('-topmost', 1)
 		dialog.minsize(270, 115)									# Taille min de la fenêtre de création de contact
 		dialog.maxsize(700, 115)
 		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
@@ -1180,37 +1190,68 @@ class NexaInterface(tk.Tk):
 		pseudo_var.set("")
 		pubkey_var.set("")
 
-		#dialog.geometry("270x115")		# Taille fenêtre d'ajout des contacts (largeur x hauteur)
-		#dialog.minsize(270, 115)
-		#dialog.maxsize(700, 115)
+		 # S'assure que la fenêtre reste au premier plan si on clique ailleurs
+		def keep_on_top(event=None):
+			try:
+				dialog.attributes('-topmost', 1)
+			except:
+				pass
+		dialog.bind('<FocusOut>', keep_on_top)
+		dialog.bind('<Unmap>', keep_on_top)
+
 		dialog.bind("<Destroy>", lambda e: setattr(self, 'contact_dialog', None))
 
 	def on_contact_select(self):
-		'''
-		Chargement de la conversation pour le contact sélectionné.
-		'''
 		selection = self.contacts_listbox.curselection()
 		if not selection:
+			self.chat_text.config(state=tk.NORMAL)
+			self.chat_text.delete(1.0, tk.END)
+			self.chat_text.config(state=tk.DISABLED)
+			self.current_contact_pubkey = None
+			# Cache la zone d'envoi de message
+			self.msg_entry.master.pack_forget()
 			return
 		index = selection[0]
 		pseudo, pubkey = self.contacts[index]
 		self.current_contact_pubkey = pubkey
-		self.load_message_history_for_contact(pseudo)
+		self.recipient_key.set(pubkey)
+		# Affiche la zone d'envoi de message
+		self.msg_entry.master.pack(fill=tk.X, side=tk.BOTTOM)
+		# Recharge l'historique à chaque sélection
+		self.load_message_history_for_contact(pseudo, pubkey)
 
-	def load_message_history_for_contact(self, contact_pseudo):
-		'''
-		Charge l'historique des messages pour un contact.
-		'''
+	def load_message_history_for_contact(self, contact_pseudo, contact_pubkey=None):
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
-		self.msg_cursor.execute("SELECT sender, message, timestamp FROM message WHERE sender=?", (contact_pseudo,))
-		rows = self.msg_cursor.fetchall()
+		# Affiche la date uniquement si un contact est sélectionné
+		if contact_pseudo is not None and contact_pubkey is not None:
+			current_date = datetime.now().strftime("%A %d %B %Y")
+			current_date = current_date[0].upper() + current_date[1:]
+			self.chat_text.insert(tk.END, "\n", "system_message")
+			self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
+		my_pseudo = self.pseudo.get().strip()
+		if contact_pubkey is None:
+			self.msg_cursor.execute("SELECT sender, message, timestamp FROM message WHERE sender=?", (contact_pseudo,))
+			rows = self.msg_cursor.fetchall()
+		else:
+			# Affiche tous les messages échangés entre l'utilisateur et le contact (dans les deux sens)
+			self.msg_cursor.execute("""
+                SELECT sender, message, timestamp FROM message
+                WHERE (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
+                   OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
+                   OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
+                   OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
+                ORDER BY id
+            """, (my_pseudo, contact_pseudo, contact_pseudo, my_pseudo, my_pseudo, my_pseudo, contact_pseudo, contact_pseudo))
+			rows = self.msg_cursor.fetchall()
 		for sender, message, timestamp in rows:
 			time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
 			tag = "message_received"
-			if sender == self.pseudo.get().strip():
+			display_sender = sender
+			if sender == my_pseudo:
 				tag = "message_sent"
-			self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
+				display_sender = "Toi"
+			self.chat_text.insert(tk.END, f"[{time_str}] {display_sender}: ", "sender_name")
 			self.chat_text.insert(tk.END, f"{message}\n", tag)
 		self.chat_text.config(state=tk.DISABLED)
 		self.chat_text.see(tk.END)
@@ -1245,6 +1286,8 @@ class NexaInterface(tk.Tk):
 		# Empêche l'ouverture de plusieurs fenêtres de modification
 		if getattr(self, 'edit_contact_dialog', None) and self.edit_contact_dialog.winfo_exists():
 			self.edit_contact_dialog.lift()
+			self.edit_contact_dialog.focus_force()
+			self.edit_contact_dialog.attributes('-topmost', 1)
 			return
 		dialog = tk.Toplevel(self)
 		self.edit_contact_dialog = dialog
@@ -1256,6 +1299,7 @@ class NexaInterface(tk.Tk):
 		x = px + (pw - 270)//2; y = py + (ph - 115)//2
 		dialog.geometry(f"270x115+{x}+{y}")
 		dialog.deiconify(); dialog.lift(); dialog.focus_force()
+		dialog.attributes('-topmost', 1)
 		dialog.minsize(270, 115)
 		dialog.maxsize(700, 115)
 		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
@@ -1317,6 +1361,15 @@ class NexaInterface(tk.Tk):
 		dialog.bind("<Return>", lambda e: _on_save())
 		dialog.bind("<Escape>", lambda e: dialog.destroy())
 
+		# S'assure que la fenêtre reste au premier plan si on clique ailleurs
+		def keep_on_top(event=None):
+			try:
+				dialog.attributes('-topmost', 1)
+			except:
+				pass
+		dialog.bind('<FocusOut>', keep_on_top)
+		dialog.bind('<Unmap>', keep_on_top)
+
 	def connect(self):
 		'''
 		Gère la connexion aux nœuds.
@@ -1351,28 +1404,26 @@ class NexaInterface(tk.Tk):
 			except Exception as e:  # En cas d'erreur, revenir à l'écran de connexion
 				self.after(0, lambda: self.status.set(f"Erreur : {str(e)}"))
 				self.after(0, lambda: self.connect_button.config(state=tk.NORMAL))
-				self.after(0, lambda e=e: messagebox.showerror("Erreur", f"Impossible de se connecter :\n{str(e)}"))
+				self.after(0, lambda e=e: messagebox.showerror(f"Erreur", "Impossible de se connecter. ({e})"))
 				self.after(0, self.show_login_interface)
 		threading.Thread(target=setup_client, daemon=True).start()
 
 	def show_chat_interface(self):
 		'''
 		Affiche l'interface de chat.
-		 '''
+		'''
 		self.login_frame.pack_forget()
 		self.chat_frame.pack(fill=tk.BOTH, expand=True)
 		self.connected = True
-		# Affiche la date après les messages d'avant la déconnexion
-		if not hasattr(self, '_reconnecting') or not self._reconnecting:
-			current_date = datetime.now().strftime("%A %d %B %Y")
-			current_date = current_date[0].upper() + current_date[1:]
-			self.chat_text.config(state=tk.NORMAL)
-			self.chat_text.insert(tk.END, "\n", "system_message")
-			self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
-			self.chat_text.config(state=tk.DISABLED)
-			self.chat_text.see(tk.END)
-		self._reconnecting = False
+		self.chat_text.config(state=tk.NORMAL)
+		self.chat_text.delete(1.0, tk.END)
+		self.chat_text.config(state=tk.DISABLED)
+		self.contacts_listbox.selection_clear(0, tk.END)
+		self.current_contact_pubkey = None
 		self.msg_entry.focus_set()
+		# Cache la zone d'envoi de message tant qu'aucun contact n'est sélectionné
+		self.msg_entry.master.pack_forget()
+		# Ne charge pas l'historique ici
 
 	def show_login_interface(self):
 		'''
@@ -1512,58 +1563,63 @@ class NexaInterface(tk.Tk):
 			self.message_to_send.set("")
 			return
 		if message == "/clear":
+			# Effacer uniquement l'historique du contact sélectionné
+			if not getattr(self, 'current_contact_pubkey', None):
+				return
+			contact_pubkey = self.current_contact_pubkey
+			# Trouver le pseudo du contact sélectionné
+			contact_pseudo = None
+			for pseudo, pubkey in getattr(self, 'contacts', []):
+				if pubkey == contact_pubkey:
+					contact_pseudo = pseudo
+					break
+			my_pseudo = self.pseudo.get().strip()
+			try:
+				# Supprimer tous les messages entre l'utilisateur et ce contact
+				self.msg_cursor.execute("DELETE FROM message WHERE (sender=? AND message IN (SELECT message FROM message WHERE sender=?)) OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))", (my_pseudo, contact_pseudo, contact_pseudo, contact_pseudo, my_pseudo, my_pseudo))
+				self.msg_db.commit()
+				self.load_message_history_for_contact(contact_pseudo, contact_pubkey)
+				self.chat_text.config(state=tk.NORMAL)
+				self.chat_text.insert(tk.END, "Historique de la conversation effacé.\n", "system_message_center")
+				self.chat_text.config(state=tk.DISABLED)
+				self.chat_text.see(tk.END)
+			except Exception as e:
+				messagebox.showerror(f"Erreur", "Erreur lors de la suppression de l'historique. ({e})")
+			self.message_to_send.set("")
+			return
+		if message == "/clear all":
 			try:
 				self.msg_cursor.execute("DELETE FROM message")
 				self.msg_db.commit()
 				self.chat_text.config(state=tk.NORMAL)
 				self.chat_text.delete(1.0, tk.END)
-				self.chat_text.config(state=tk.DISABLED)
-				# Réaffiche la date après avoir effacé les messages
-				current_date = datetime.now().strftime("%A %d %B %Y")
-				current_date = current_date[0].upper() + current_date[1:]
-				self.chat_text.config(state=tk.NORMAL)
-				self.chat_text.insert(tk.END, "\n", "system_message")
-				self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
-				self.chat_text.insert(tk.END, "Historique des messages effacé.\n", "system_message_center")
+				self.chat_text.insert(tk.END, "Tous les messages ont été effacés.\n", "system_message_center")
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
 			except Exception as e:
-				print(f"Erreur lors de la suppression de l'historique: {e}")
+				messagebox.showerror(f"Erreur", "Erreur lors de la suppression de tous les messages. ({e})")
 			self.message_to_send.set("")
 			return
-			
+		
 		# Vérification de la longueur du message (sans compter les espaces)
 		message_no_spaces = message.replace(" ", "")
 		if len(message_no_spaces) > 10000:
 			messagebox.showerror("Erreur", "Le message est trop long. La limite est de 10000 caractères (espaces non compris).")
 			return
 		
-		if hasattr(self.client, 'key_requested') and self.client.key_requested:
-			key = self.recipient_key.get().strip()
-			if key and hasattr(self.client, 'verify_key') and self.client.verify_key(key):
-				try:
-					future = self.key_queue.get_nowait()
-					future.put(key)
-				except queue.Empty:
-					print(key)
-			else:
-				for widget in self.winfo_children():
-					if isinstance(widget, ttk.Entry) and widget.winfo_parent() == str(self.chat_frame.winfo_child("!frame2")):
-						widget.focus_set()
-						break
+		# Il faut qu'un contact soit sélectionné pour envoyer
+		if not getattr(self, 'current_contact_pubkey', None):
 			return
-		key = self.recipient_key.get().strip()
+		key = self.current_contact_pubkey
 		if not key:
 			return
-		if not (hasattr(self.client, 'verify_key') and self.client.verify_key(key)):
-			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
-			return
-		if hasattr(self.client, 'message_to_send') and hasattr(self.client, 'recipient_key'):
-			self.client.message_to_send = message
-			self.client.recipient_key = key
-			self.message_to_send.set("")
-		else:
-			print(message)
+		if hasattr(self.client, 'verify_key') and self.client.verify_key(key):
+			if hasattr(self.client, 'message_to_send') and hasattr(self.client, 'recipient_key'):
+				self.client.message_to_send = message
+				self.client.recipient_key = key
+				self.message_to_send.set("")
+			else:
+				print(message)
 
 	def disconnect_and_reset(self):
 		"""
@@ -1595,6 +1651,8 @@ class NexaInterface(tk.Tk):
 		'''
 		Gère la fermeture du programme.
 		'''
+		global stop_async_getnodes
+		stop_async_getnodes = True  # Stoppe la recherche des nœuds
 		if self.client_wrapper:
 			self.client_wrapper.stop_client()
 		try:
@@ -1609,18 +1667,15 @@ class NexaInterface(tk.Tk):
 			self.seen_db.close()
 		except:
 			pass
-		self.destroy()
-		self.quitting = True
 		try:
-			if platform.system() == 'Windows':
-				os.system(f'taskkill /PID {os.getpid()} /F >nul 2>&1')
-		except Exception:
+			self.quit()
+		except:
 			pass
 		try:
-			os.kill(os.getpid(), 9)
-		except Exception:
+			self.destroy()
+		except:
 			pass
-		sys.exit(0)
+		os._exit(0)
 
 if __name__ == "__main__":
 	app = NexaInterface()
