@@ -543,6 +543,7 @@ class MessageRedirect:
 		self.updating = True
 		self.save_message_callback = save_message_callback
 		self.root = None
+		self.get_contact_pseudo = None  # Ajout pour accès au pseudo du contact sélectionné
 		threading.Thread(target=self.update_loop, daemon=True).start()
 
 	def write(self, string):
@@ -567,7 +568,20 @@ class MessageRedirect:
 							display_sender = "Toi"
 						else:
 							display_sender = sender
-						timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+						# Correction pour messages à soi-même : si sender != pseudo et sender == pubkey, afficher le pseudo du contact
+						if hasattr(parent, 'current_contact_pubkey') and hasattr(parent, 'contacts'):
+							my_pubkey = getattr(parent, 'key_var', None)
+							if my_pubkey:
+								my_pubkey = my_pubkey.get().strip()
+							contact_pseudo = None
+							for p, pk in parent.contacts:
+								if pk == parent.current_contact_pubkey:
+									contact_pseudo = p
+									break
+							# Si on parle à soi-même (ma clé == clé du contact) et sender n'est pas "Toi", afficher le pseudo du contact
+							if parent.current_contact_pubkey == my_pubkey and sender != "Toi" and contact_pseudo:
+								display_sender = contact_pseudo
+							timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 						if self.save_message_callback:
 							self.save_message_callback(display_sender, message, timestamp)
 				except Exception as e:
@@ -600,13 +614,29 @@ class MessageRedirect:
 								if len(parts) >= 2:
 									sender, message = parts[0], parts[1]
 									time_str = datetime.now().strftime("%H:%M")
-									 # Correction : si sender correspond au pseudo utilisateur, on force "Toi"
+									# Correction : si sender correspond au pseudo utilisateur, on force "Toi"
 									if sender.strip() == self.pseudo.strip() or sender.strip().lower() in ("toi", "vous"):
 										display = 'Toi'
 										tag = 'message_sent'
 									else:
 										display = sender
 										tag = 'message_received'
+									# Correction pour messages à soi-même : si on parle à soi-même et sender != "Toi", afficher le pseudo du contact
+									parent = self.text_widget.master
+									while parent and not hasattr(parent, 'current_contact_pubkey'):
+										parent = getattr(parent, 'master', None)
+									if parent and hasattr(parent, 'current_contact_pubkey') and hasattr(parent, 'contacts'):
+										my_pubkey = getattr(parent, 'key_var', None)
+										if my_pubkey:
+											my_pubkey = my_pubkey.get().strip()
+										contact_pseudo = None
+										for p, pk in parent.contacts:
+											if pk == parent.current_contact_pubkey:
+												contact_pseudo = p
+												break
+										if parent.current_contact_pubkey == my_pubkey and sender != "Toi" and contact_pseudo:
+											display = contact_pseudo
+											tag = 'message_received'
 									self.text_widget.insert(tk.END, f"[{time_str}] {display}: ", "sender_name")
 									self.text_widget.insert(tk.END, message.strip(), tag)
 									self.text_widget.insert(tk.END, "\n", "")
@@ -1265,6 +1295,7 @@ class NexaInterface(tk.Tk):
 				self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
 				for sender, to, message, timestamp in day_msgs:
 					time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
+					# Correction pour messages à soi-même : si on parle à soi-même et sender != "Toi", afficher le pseudo du contact
 					if my_pubkey == contact_pubkey:
 						if sender == "Toi":
 							display_sender = "Toi"
