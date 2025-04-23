@@ -10,12 +10,12 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Définir le dossier de données commun (AppData\Roaming\NexaChat)
+# Définir le dossier des données (AppData\Roaming\NexaChat)
 appdata = os.getenv('APPDATA') or os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming')
 DATA_DIR = os.path.join(appdata, 'NexaChat')
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Chemin pour lecture (dans le bundle) et écriture (user_data_dir)
+# Chemin pour lecture et écriture
 SETTINGS_BUNDLE_PATH = os.path.join(SCRIPT_DIR, "settings.ini")
 SETTINGS_USER_PATH = os.path.join(DATA_DIR, "settings.ini")
 
@@ -34,7 +34,7 @@ except:
 available_nodes = []
 node_detection_callback = None
 app = None
-stop_async_getnodes = False  # Ajout d'un flag global pour stopper la recherche des nœuds
+stop_async_getnodes = False
 
 # Fonction utilitaire pour assombrir une couleur hexadécimale
 def darken(hex_color, factor=0.8):
@@ -50,27 +50,27 @@ def luminosite(hex_color):
     b = int(hex_color[5:7], 16)
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
+# Fonction utilitaire pour afficher les erreurs de façon uniforme
+def show_error(message, **kwargs):
+    messagebox.showerror("Erreur", message, **kwargs)
+
 # Choix de couleur de base et alias pour éviter doublons
 base_colors = {
-    'dark grey': ('#424242', '#212121'),
-    'dark blue': ('#1565c0', '#0d47a1'),
-    'light green': ('#7ED957', '#388E3C'),
-    'light blue': ('#339CFF', '#1976D2'),
-    'purple': ('#8e24aa', '#512da8'),
-    'red': ('#D50000', '#B71C1C'),
-    'yellow': ('#FFEB3B', '#FBC02D'),
-    'green': ('#388E3C', '#1B5E20'),
-    'pink': ('#FF69B4', '#C2185B'),
-    'black': ('#212121', '#000000'),
-    'blue': ('#1976d2', '#0d47a1'),
-    'orange': ('#FF9800', '#F57C00'),
+    'dark grey': ('#424242', '#212121'),		'dark blue': ('#1565c0', '#0d47a1'),
+    'light green': ('#7ED957', '#388E3C'),		'light blue': ('#339CFF', '#1976D2'),
+    'purple': ('#8e24aa', '#512da8'),			'red': ('#D50000', '#B71C1C'),
+    'yellow': ('#FFEB3B', '#FBC02D'),			'green': ('#388E3C', '#1B5E20'),
+    'pink': ('#FF69B4', '#C2185B'),				'black': ('#212121', '#000000'),
+    'blue': ('#1976d2', '#0d47a1'),				'orange': ('#FF9800', '#F57C00'),
 }
 COLOR_CHOICES = dict(base_colors)
 aliases = {
-    'gris foncé': 'dark grey', 'bleu foncé': 'dark blue',
-    'vert clair': 'light green', 'bleu clair': 'light blue',
-    'violet': 'purple', 'rouge': 'red', 'jaune': 'yellow',
-    'vert': 'green', 'rose': 'pink', 'noir': 'black', 'bleu': 'blue',
+    'gris foncé': 'dark grey',				'bleu foncé': 'dark blue',
+    'vert clair': 'light green',			'bleu clair': 'light blue',
+	'bleu ciel': 'light blue',				'reset': 'light blue',
+    'violet': 'purple', 'rouge':			'red', 'jaune': 'yellow',
+    'vert': 'green',						'rose': 'pink',
+	'noir': 'black', 						'bleu': 'blue',
 }
 for alias_name, ref in aliases.items():
     COLOR_CHOICES[alias_name] = base_colors[ref]
@@ -81,14 +81,14 @@ def parse_color_input(color_input):
 	Retourne primary, secondary ou None si invalide.
 	"""
 	color_input = color_input.strip()
-	# Format hexadécimal : #RRGGBB
+	# Format hexadécimal : #RRGGBB ou RRGGBB
 	hex_match = re.fullmatch(r'#([0-9a-fA-F]{6})', color_input)
 	if hex_match:
 		primary = f"#{hex_match.group(1)}"
 		# Génère une couleur secondaire plus foncée
 		secondary = darken(primary)
 		return (primary, secondary)
-	# Format RGB : rgb(r,g,b)
+	# Format RGB : rgb(r,g,b) ou r,g,b
 	rgb_match = re.fullmatch(r'rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)', color_input, re.IGNORECASE)
 	if rgb_match:
 		r, g, b = map(int, rgb_match.groups())
@@ -100,12 +100,12 @@ def parse_color_input(color_input):
 
 def load_color_settings():
     config = configparser.ConfigParser()
-    # Priorité à la version utilisateur (modifiable)
+
     if os.path.exists(SETTINGS_USER_PATH):
         config.read(SETTINGS_USER_PATH)
     elif os.path.exists(SETTINGS_BUNDLE_PATH):
         config.read(SETTINGS_BUNDLE_PATH)
-        # Copie la config du bundle vers le dossier utilisateur si pas déjà présent
+
         os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
         with open(SETTINGS_USER_PATH, 'w') as configfile:
             config.write(configfile)
@@ -125,7 +125,7 @@ def save_color_settings(primary, secondary):
     with open(SETTINGS_USER_PATH, 'w') as configfile:
         config.write(configfile)
 
-def signal_handler(sig, frame):
+def signal_handler(sig, frame):					# sig, frame inutilisées mais nécessaires
 	'''
 	Ferme le programme quand Crtl+C est saisi.
 	'''
@@ -152,7 +152,7 @@ def get_nodes():
 			node_detection_callback(nodes)
 		return nodes
 	except Exception as e:
-		messagebox.showerror("Erreur", f"Erreur lors de la recherche des nœuds. ({e})")
+		show_error(f"Erreur lors de la recherche des nœuds. ({e})")
 		if node_detection_callback:
 			node_detection_callback([])
 		return []
@@ -165,10 +165,7 @@ def async_getnodes(interval=60):
 	if stop_async_getnodes:
 		return
 	available_nodes = get_nodes()
-	if len(available_nodes) == 0:
-		messagebox.showerror("Erreur", "Aucun noeud en ligne.")
-	# Ne relance le timer que si l'app n'est pas en train de fermer
-	if not stop_async_getnodes:
+	if not stop_async_getnodes:											# Ne relance le timer que si l'app n'est pas en train de fermer
 		threading.Timer(interval, async_getnodes, [interval]).start()
 
 class Client:
@@ -182,8 +179,8 @@ class Client:
 		self.host = host
 		self.port = port
 		
-		# Utilise un dossier persistant pour la clé privée
-		privkey_path = os.path.join(DATA_DIR, "privkey.key")
+		privkey_path = os.path.join(DATA_DIR, "privkey.key")			# Chemin clé publique et privée
+		# Génère les clés
 		try:
 			with open(privkey_path, "r") as f:
 				content = f.read().strip()
@@ -199,7 +196,6 @@ class Client:
 						self.privKey = lines[0]
 						self.pubKey = lines[1]
 					else:
-						messagebox.showerror("Erreur", "Format de fichier de clés incorrect, elle vont être regénéréees.")
 						self.keys = generate_eth_key()
 						self.privKey = self.keys.to_hex()
 						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
@@ -212,7 +208,6 @@ class Client:
 			with open(privkey_path, "w") as f:
 				f.write(self.privKey + "\n" + self.pubKey)
 		
-		# Chargement persistant des messages déjà vus (ne jamais réinitialiser)
 		self.seen_messages = set()
 		self.seen_db = sqlite3.connect(os.path.join(DATA_DIR, "seen_messages.db"), check_same_thread=False)
 		self.seen_cursor = self.seen_db.cursor()
@@ -233,7 +228,6 @@ class Client:
 		db_path = os.path.join(DATA_DIR, "messagesUI.db")
 		self.msg_db = sqlite3.connect(db_path, check_same_thread=False)
 
-		# contacts database setup: always use contacts.db in DATA_DIR
 		self.contacts_db = sqlite3.connect(os.path.join(DATA_DIR, "contacts.db"), check_same_thread=False)
 		self.contacts_cursor = self.contacts_db.cursor()
 		self.contacts_cursor.execute('''CREATE TABLE IF NOT EXISTS contacts (
@@ -246,7 +240,7 @@ class Client:
 	@staticmethod
 	def verify_key(key):
 		'''
-		Vérifie si une clé publique est au bon format hexadécimale compressé (66 hex).
+		Vérifie si une clé publique est au bon format hexadécimal compressé (66 hex).
 		'''
 		if isinstance(key, str) and key.strip() and len(key) == 66:
 			try:
@@ -263,11 +257,10 @@ class Client:
 		"""
 		try:
 			async for message in self.websocket:
-				# Ajout d'une vérification pour éviter la réception de messages après reconnexion
 				if self.quitting or not self.websocket:
 					return
 				if not message:
-					messagebox.showerror("Erreur", "Déconnecté du serveur.")
+					show_error("Déconnecté du serveur.")
 					break
 				if "register;" not in message:
 					try:
@@ -275,7 +268,7 @@ class Client:
 						sender = parts[0]
 						content = parts[1]
 						msg_id = parts[3] if len(parts) > 3 else None
-						 # Vérification persistante pour éviter la réception de messages déjà vus
+						# Vérification persistante pour éviter la réception de messages déjà vus
 						if msg_id and msg_id in self.seen_messages:
 							continue
 						if msg_id:
@@ -299,17 +292,17 @@ class Client:
 						pass
 		except websockets.exceptions.ConnectionClosed:
 			if not self.quitting:
-				messagebox.showerror("Erreur", "Connexion au serveur perdue.")
+				show_error("Connexion au serveur perdue.")
 		except Exception as e:
 			if not self.quitting:
-				messagebox.showerror("Erreur", f"Erreur lors de la réception du message. ({e})")
+				show_error(f"Erreur lors de la réception du message. ({e})")
 
 	async def send_message_with_key(self, message, recipient_key, pseudo):
 		'''
 		Méthode pour envoyer un message directement avec une clé (spécifiquement pour l'interface).
 		'''
 		if not self.websocket:
-			messagebox.showerror("Erreur", "Tu n'es pas connecté au serveur.")
+			show_error("Tu n'es pas connecté au serveur.")
 			return False
 		try:
 			new_msg = ""
@@ -320,16 +313,16 @@ class Client:
 					new_msg += lettre
 
 			if not Client.verify_key(recipient_key):
-				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
+				show_error("Assure-toi d’avoir correctement saisi la clé publique !")
 				return False
 			msg_id = str(uuid.uuid4())
 			msgEncrypt = encrypt(recipient_key, new_msg.encode())
 			await self.websocket.send(f"{pseudo};{msgEncrypt.hex()};{recipient_key};{msg_id}")
 
-			print(f"Toi: {message}")					# Simule la réception de son propre message avec "Toi:" au lieu du pseudo)
+			print(f"Toi: {message}")			# Affiche le message envoyé
 			return True
 		except Exception as e:
-			messagebox.showerror("Erreur", f"Erreur lors de l'envoi du message. ({e})")
+			show_error(f"Erreur lors de l'envoi du message. ({e})")
 			return False
 
 	async def connect_and_send(self):
@@ -353,7 +346,7 @@ class Client:
 				while not pseudo.strip():
 					pseudo = input("Entrez votre pseudo : ")
 					if not pseudo.strip():
-						messagebox.showerror("Error", "Tu ne peux pas avoir un pseudo vide.")
+						show_error("Tu ne peux pas avoir un pseudo vide.")
 				registration_msg = f"register;client;{pseudo};{self.pubKey}"
 				await websocket.send(registration_msg)
 				asyncio.create_task(self.receive_messages())
@@ -381,11 +374,10 @@ class Client:
 						except asyncio.CancelledError:
 							break
 						except Exception as e:
-							messagebox.showerror("Erreur", "Assure-toi d'avoir correctement saisi la clé publique. Réessaie.")
+							show_error("Assure-toi d'avoir correctement saisi la clé publique. Réessaie.")
 							message_queue.task_done()
 				
 				processor_task = asyncio.create_task(message_processor())
-				
 				try:
 					while True:
 						if self.quitting:
@@ -398,7 +390,7 @@ class Client:
 							if self.verify_key(key):
 								await message_queue.put((msg, key))
 							else:
-								messagebox.showerror("Erreur", "Clé du destinataire invalide.")
+								show_error("Clé du destinataire invalide.")
 						try:
 							await asyncio.sleep(0.05)
 						except asyncio.CancelledError:
@@ -412,12 +404,12 @@ class Client:
 					
 		except websockets.exceptions.ConnectionClosed:
 			if not self.quitting:
-				messagebox.showerror("Erreur", "Connexion fermée par le serveur.")
+				show_error("Connexion fermée par le serveur.")
 		except asyncio.CancelledError:
 			pass
 		except Exception as e:
 			if not self.quitting:
-				messagebox.showerror("Erreur", f"Problème de connexion au serveur. ({e})")
+				show_error(f"Problème de connexion au serveur. ({e})")
 
 	async def keep_connection_alive(self, interval=30):
 		try:
@@ -430,17 +422,16 @@ class Client:
 						await self.reconnect()			# Tentative de reconnexion si le ping échoue
 		except Exception as e:
 			if not self.quitting:
-				messagebox.showerror("Erreur", f"Erreur inattendue dans le maintien de la connexion. ({e})")
+				show_error(f"Erreur inattendue dans le maintien de la connexion. ({e})")
 
 	async def reconnect(self):
 		'''
 		Tente de se reconnecter au serveur en cas de déconnexion.
 		'''
 		try:
-			#print("Tentative de reconnexion...")
 			await self.connect_and_send()
 		except Exception as e:
-			messagebox.showerror("Erreur", f"Échec de la reconnexion. ({e})")
+			show_error(f"Échec de la reconnexion. ({e})")
 
 	def start(self):
 		'''
@@ -450,7 +441,6 @@ class Client:
 			self.loop.run_until_complete(self.connect_and_send())
 		except KeyboardInterrupt:
 			self.quitting = True
-			#print("\nFermeture du programme...\n")
 			if platform.system() == "Windows":
 				os.system("taskkill /F /PID " + str(os.getppid()))
 			else:
@@ -480,9 +470,8 @@ class WrapperClient:
         try:
             self.client.start()
         except Exception as e:
-            # Ne pas afficher l'erreur spécifique de la boucle événementielle
             if "Event loop stopped before Future completed" not in str(e):
-                messagebox.showerror("Erreur", f"Erreur dans le client. ({e})")
+                show_error(f"Erreur dans le client. ({e})")
         finally:
             self.client = None
         
@@ -494,43 +483,35 @@ class WrapperClient:
         if self.client:
             self.client.quitting = True
             
-        # Fermer la websocket et annuler toutes les tâches en attente
+        # Ferme la websocket et annuler toutes les tâches en cours ou en attente
         try:
             if hasattr(self.client, 'websocket') and self.client.websocket:
                 loop = self.client.loop
                 if loop and loop.is_running():
-                    # Annuler toutes les tâches en cours
                     for task in asyncio.all_tasks(loop):
                         task.cancel()
-                    
-                    # Fermer la websocket proprement
                     coro = self.client.websocket.close()
                     future = asyncio.run_coroutine_threadsafe(coro, loop)
                     try:
-                        # Attendre la fermeture avec timeout
-                        future.result(timeout=1.0)
+                        future.result(timeout=1.0)			# Attend la fermeture avec timeout
                     except (asyncio.TimeoutError, concurrent.futures.TimeoutError, Exception):
                         pass
         except Exception as e:
             pass
             
-        # Attendre que le thread du client se termine
+        # Attend que le thread du client se termine
         max_wait = 2.0  # secondes
         start_time = time.time()
         while self.client_thread and self.client_thread.is_alive() and time.time() - start_time < max_wait:
             time.sleep(0.1)
-            
-        # Forcer l'arrêt de la boucle événementielle
+
         if self.client and hasattr(self.client, 'loop') and self.client.loop:
             try:
                 loop = self.client.loop
                 if loop.is_running():
-                    # Définir un signal de sortie pour toutes les tâches en attente
                     for task in asyncio.all_tasks(loop):
                         if not task.done():
                             task.cancel()
-                    
-                    # Arrêter la boucle
                     loop.call_soon_threadsafe(loop.stop)
             except Exception:
                 pass
@@ -540,9 +521,8 @@ class WrapperClient:
 
 # Interface graphique
 class MessageRedirect:
-	def __init__(self, text_widget, pseudo, save_message_callback=None):
+	def __init__(self, text_widget, save_message_callback=None):
 		self.text_widget = text_widget
-		self.pseudo = pseudo
 		self.queue = queue.Queue()
 		self.original_stdout = sys.stdout
 		self.updating = True
@@ -551,11 +531,10 @@ class MessageRedirect:
 
 	def write(self, string):
 		if "Erreur" in string or "erreur" in string:
+			# remonte uniquement via la boucle d'erreur
 			self.queue.put(("error", string))
-		elif "Erreur lors de la recherche des nœuds" in string or ("Erreur:" in string and "nœud" in string.lower()):
-			messagebox.showerror("Erreur", "DEBUG :", string, file=self.original_stdout)
 		else:
-			# Empêcher l'affichage des messages reçus si aucun contact n'est sélectionné
+			# Empêche l'affichage des messages reçus si aucun contact n'est sélectionné
 			if ": " in string and not any(x in string for x in ("===", "Ta clé", "Connexion")):
 				try:
 					parent = self.text_widget.master
@@ -566,12 +545,11 @@ class MessageRedirect:
 					parts = string.split(": ", 1)
 					if len(parts) >= 2:
 						sender, message = parts[0], parts[1].strip()
-						# Correction : si sender correspond au pseudo utilisateur, on force "Toi"
-						if sender.strip() == self.pseudo.strip() or sender.strip().lower() in ("toi", "vous"):
+						if sender.strip().lower() in ("toi", "vous"):
 							display_sender = "Toi"
 						else:
 							display_sender = sender
-						# Correction pour messages à soi-même : si sender != pseudo et sender == pubkey, afficher le pseudo du contact
+
 						if hasattr(parent, 'current_contact_pubkey') and hasattr(parent, 'contacts'):
 							my_pubkey = getattr(parent, 'key_var', None)
 							if my_pubkey:
@@ -581,7 +559,7 @@ class MessageRedirect:
 								if pk == parent.current_contact_pubkey:
 									contact_pseudo = p
 									break
-							# Si on parle à soi-même (ma clé == clé du contact) et sender n'est pas "Toi", afficher le pseudo du contact
+
 							if parent.current_contact_pubkey == my_pubkey and sender != "Toi" and contact_pseudo:
 								display_sender = contact_pseudo
 							timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -607,7 +585,7 @@ class MessageRedirect:
 					item_type, string = item
 					if item_type == "error":
 						if self.text_widget.winfo_toplevel():
-							self.text_widget.winfo_toplevel().after(0, lambda s=string: messagebox.showerror("Erreur", s.strip()))
+							self.text_widget.winfo_toplevel().after(0, lambda s=string: show_error(s.strip()))
 					else:
 						self.text_widget.config(state=tk.NORMAL)
 						string = string.rstrip()
@@ -617,14 +595,14 @@ class MessageRedirect:
 								if len(parts) >= 2:
 									sender, message = parts[0], parts[1]
 									time_str = datetime.now().strftime("%H:%M")
-									# Correction : si sender correspond au pseudo utilisateur, on force "Toi"
-									if sender.strip() == self.pseudo.strip() or sender.strip().lower() in ("toi", "vous"):
+
+									if sender.strip().lower() in ("toi", "vous"):
 										display = 'Toi'
 										tag = 'message_sent'
 									else:
 										display = sender
 										tag = 'message_received'
-									# Correction pour messages à soi-même : si on parle à soi-même et sender != "Toi", afficher le pseudo du contact
+
 									parent = self.text_widget.master
 									while parent and not hasattr(parent, 'current_contact_pubkey'):
 										parent = getattr(parent, 'master', None)
@@ -761,7 +739,6 @@ class NexaInterface(tk.Tk):
 		
 		self.message_to_send = StringVar()
 		self.recipient_key = StringVar()
-		self.pseudo = StringVar()
 		self.status = StringVar(value="Déconnecté")
 		self.key_var = StringVar(value="Non disponible")
 		self.nodes_var = StringVar(value="Recherche de nœuds...")
@@ -777,7 +754,7 @@ class NexaInterface(tk.Tk):
 				try:
 					self.iconbitmap(icon_path)
 				except Exception as e:
-					messagebox.showerror("Erreur", f"L'icône Nexa.ico n'a pas pu être chargée. ({e})", file=sys.stdout)
+					show_error(f"L'icône Nexa.ico n'a pas pu être chargée. ({e})")
 
 		self.msg_db = sqlite3.connect(os.path.join(DATA_DIR, "messagesUI.db"), check_same_thread=False)
 
@@ -822,7 +799,7 @@ class NexaInterface(tk.Tk):
 			self.msg_cursor.execute("DELETE FROM message WHERE timestamp < ?", (one_week_ago,))
 			self.msg_db.commit()
 		except Exception as e:
-			messagebox.showerror("Erreur", f"Erreur lors du nettoyage des anciens messages. ({str(e)})", file=sys.stdout)
+			show_error(f"Erreur lors du nettoyage des anciens messages. ({e})")
 
 	def center_window(self):
 		self.update_idletasks()
@@ -866,18 +843,17 @@ class NexaInterface(tk.Tk):
 		header_padding.pack(fill=tk.X, padx=15, pady=15)
 
 		# Titre centré
-		ttk.Label(header_padding, text="Nexa Chat", style='Header.TLabel').pack(anchor=tk.CENTER, expand=True)
+		ttk.Label(header_padding, text="NexaChat", style='Header.TLabel').pack(anchor=tk.CENTER, expand=True)
 
 		# Page de connexion
 		self.login_frame = ttk.Frame(main_frame, padding=20)	
-		self.login_frame.pack(fill=tk.BOTH, expand=True, pady=(60, 0))  # Ajout d'un padding vertical
+		self.login_frame.pack(fill=tk.BOTH, expand=True, pady=(80, 0))  # Ajout d'un padding vertical
 		
 		icon_path = os.path.join(SCRIPT_DIR, "Nexa.png")
 		if os.path.exists(icon_path):
 			try:
 				pil_image = Image.open(icon_path)
-				# Redimensionne l'image pour qu'elle ne soit pas trop grosse
-				pil_image = pil_image.resize((64, 64), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+				pil_image = pil_image.resize((128, 128), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
 				self.tk_logo = ImageTk.PhotoImage(pil_image)
 				logo_label = ttk.Label(self.login_frame, image=self.tk_logo)
 			except Exception as e:
@@ -885,47 +861,48 @@ class NexaInterface(tk.Tk):
 		else:
 			logo_label = ttk.Label(self.login_frame, text="📱", font=(self.default_font, 48))
 		logo_label.pack(pady=(30, 20))
-				
+
 		ttk.Label(self.login_frame,
-					text="Bienvenue sur Nexa Chat !",
-					font=(self.default_font, 16, "bold")).pack(pady=(0, 30))
+					text="Bienvenue sur NexaChat !",
+					font=(self.default_font, 25, "bold")).pack(pady=(0, 20))
 		
 		# Formulaire de connexion
 		form_frame = ttk.Frame(self.login_frame, padding=10)
 		form_frame.pack(fill=tk.X)
 
-		ttk.Label(form_frame, text="Saisis ton pseudo :").pack(anchor=tk.W, pady=(0, 5))
-		pseudo_entry = ttk.Entry(form_frame, textvariable=self.pseudo, font=(self.default_font, 12))
-		pseudo_entry.pack(fill=tk.X, pady=(0, 20))
-		pseudo_entry.bind("<Return>", lambda event: self.connect() if self.connect_button['state'] != tk.DISABLED else None)
-		# Ajout du focus automatique sur le champ pseudo lors du lancement
-		self.after(100, lambda: pseudo_entry.focus_set())
-		ttk.Label(form_frame, textvariable=self.nodes_var).pack(anchor=tk.W, pady=(0, 10))
-		
-		# Bouton de connexion avec style adapté selon la plateforme
+		spacer = ttk.Frame(self.login_frame, height=100)
+		spacer.pack(fill=tk.X)
+
+		bottom_frame = ttk.Frame(self.login_frame)
+		bottom_frame.pack(fill=tk.X, pady=(45, 0))
+
+		# Style adapté selon la plateforme
+		ttk.Label(bottom_frame,
+				textvariable=self.nodes_var,
+				font=(self.default_font, 13)
+				).pack(anchor=tk.CENTER, pady=(0, 20))
+		# Bouton de connexion
 		if self.is_mac:
-			self.connect_button = ttk.Button(form_frame, 
-								 text="Me connecter",
-								 command=self.connect,
-								 style='TButton')
-			self.connect_button.pack(fill=tk.X, pady=5)
+			self.connect_button = ttk.Button(bottom_frame, 
+											text="Me connecter",
+											command=self.connect,
+											style='TButton')
+			self.connect_button.pack(fill=tk.X, pady=10)
 		else:
-			self.connect_button = tk.Button(form_frame,
+			self.connect_button = tk.Button(bottom_frame,
 								text="Me connecter",
 								command=self.connect,
 								bg=self.primary_color,
 								fg="white", 
-								font=(self.default_font, 10, 'bold'),
+								font=(self.default_font, 18, 'bold'),
 								relief=tk.RAISED,
 								borderwidth=0,
-								padx=10, pady=8,
+								padx=10, pady=15,
 								cursor="hand2")
 			self.connect_button.pack(fill=tk.X, ipady=8)
-		
 		self.connect_button.config(state=tk.DISABLED)  # Désactivé par défaut jusqu'à ce que des nœuds soient trouvés
-			
-		# Fenêtre de chat
-		self.chat_frame = ttk.Frame(main_frame)
+
+		self.chat_frame = ttk.Frame(main_frame)		# Fenêtre de chat
 
 		# En-tête avec clé publique de l'utilisateur
 		key_frame = ttk.Frame(self.chat_frame, padding=(10, 2))
@@ -1109,7 +1086,7 @@ class NexaInterface(tk.Tk):
 			self.chat_text.config(state=tk.DISABLED)
 			self.chat_text.see(tk.END)
 		except Exception as e:
-			messagebox.showerror("Erreur", f"Erreur lors du chargement de l'historique. ({str(e)})", file=sys.stdout)
+			show_error(f"Erreur lors du chargement de l'historique. ({e})")
 
 	def save_message(self, sender, message, timestamp, to=None):
 		'''
@@ -1126,7 +1103,7 @@ class NexaInterface(tk.Tk):
 			self.msg_cursor.execute("INSERT INTO message (sender, \"to\", message, timestamp) VALUES (?, ?, ?, ?)", (sender, to, message, timestamp))
 			self.msg_db.commit()
 		except Exception as e:
-			messagebox.showerror("Erreur", f"Erreur lors de la sauvegarde du message. ({str(e)})", file=sys.stdout)
+			show_error(f"Erreur lors de la sauvegarde du message. ({e})")
 
 	def load_contacts(self):
 		'''
@@ -1153,18 +1130,18 @@ class NexaInterface(tk.Tk):
 		Ajoute un nouveau contact.
 		'''
 		if not Client.verify_key(pubkey):
-			messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !")
+			show_error("Assure-toi d’avoir correctement saisi la clé publique !")
 			return
 		self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE pseudo=?", (pseudo,))
 		if self.contacts_cursor.fetchone():
-			messagebox.showerror("Erreur", "Un contact avec ce pseudo existe déjà.")
+			show_error("Un contact avec ce pseudo existe déjà.")
 			return
 		try:
 			self.contacts_cursor.execute("INSERT INTO contacts (pseudo, pubkey) VALUES (?, ?)", (pseudo, pubkey))
 			self.contacts_db.commit()
 			self.load_contacts()
 		except sqlite3.IntegrityError:
-			messagebox.showerror("Erreur", "Le contact existe déjà.")
+			show_error("Le contact existe déjà.")
 
 	def fenêtre_contacts(self):
 		# prevent multiple contact dialogs
@@ -1219,11 +1196,11 @@ class NexaInterface(tk.Tk):
 			if not key:
 				return
 			if not Client.verify_key(key):
-				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
+				show_error("Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
 				pubkey_entry.focus_set()
 				return
 			if self.contacts_cursor.execute("SELECT 1 FROM contacts WHERE pseudo=?", (pseudo,)).fetchone():
-				messagebox.showerror("Erreur", "Un contact avec ce pseudo existe déjà.", parent=dialog)
+				show_error("Un contact avec ce pseudo existe déjà.", parent=dialog)
 				pseudo_entry.focus_set()
 				return
 			try:
@@ -1232,7 +1209,7 @@ class NexaInterface(tk.Tk):
 				self.load_contacts()
 				dialog.destroy()
 			except sqlite3.IntegrityError:
-				messagebox.showerror("Erreur", "Le contact existe déjà.", parent=dialog)
+				show_error("Le contact existe déjà.", parent=dialog)
 				pseudo_entry.focus_set()
 		if self.is_mac:
 			ttk.Button(btn_frame, text="Ajouter", command=_on_add).pack(side=tk.LEFT, padx=5)
@@ -1285,7 +1262,6 @@ class NexaInterface(tk.Tk):
 		self.delete_old_messages()  # Nettoyage avant chargement
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
-		my_pseudo = self.pseudo.get().strip()
 		my_pubkey = self.key_var.get().strip()
 		self.msg_cursor.execute("SELECT sender, \"to\", message, timestamp FROM message WHERE (\"to\"=? OR sender=?) ORDER BY id", (contact_pubkey, contact_pubkey))
 		rows = self.msg_cursor.fetchall()
@@ -1312,21 +1288,12 @@ class NexaInterface(tk.Tk):
 				self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
 				for sender, to, message, timestamp in day_msgs:
 					time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
-					# Correction pour messages à soi-même : si on parle à soi-même et sender != "Toi", afficher le pseudo du contact
-					if my_pubkey == contact_pubkey:
-						if sender == "Toi":
-							display_sender = "Toi"
-							tag = "message_sent"
-						else:
-							display_sender = contact_pseudo
-							tag = "message_received"
+					if sender == "Toi":
+						display_sender = "Toi"
+						tag = "message_sent"
 					else:
-						if sender == my_pubkey or sender == my_pseudo or sender == "Toi":
-							display_sender = "Toi"
-							tag = "message_sent"
-						else:
-							display_sender = contact_pseudo
-							tag = "message_received"
+						display_sender = contact_pseudo
+						tag = "message_received"
 					self.chat_text.insert(tk.END, f"[{time_str}] {display_sender}: ", "sender_name")
 					self.chat_text.insert(tk.END, f"{message}\n", tag)
 		self.chat_text.config(state=tk.DISABLED)
@@ -1354,7 +1321,7 @@ class NexaInterface(tk.Tk):
 				self.msg_cursor.execute("DELETE FROM message WHERE \"to\"=?", (pubkey,))
 				self.msg_db.commit()
 			except Exception as e:
-				messagebox.showerror("Erreur", f"Erreur lors de la suppression de l'historique. ({str(e)})")
+				show_error(f"Erreur lors de la suppression de l'historique. ({e})")
 			self.contacts_cursor.execute("DELETE FROM contacts WHERE pseudo=?", (pseudo,))
 			self.contacts_db.commit()
 			self.load_contacts()
@@ -1369,11 +1336,6 @@ class NexaInterface(tk.Tk):
 		'''
 		Gère la connexion aux nœuds.
 		'''
-		pseudo = self.pseudo.get().strip()
-		if not pseudo:
-			messagebox.showerror("Erreur", "Tu dois forcément avoir un pseudo !")
-			return
-		
 		self.status.set("Connexion en cours...")
 		self.connect_button.config(state=tk.DISABLED)
 					
@@ -1381,7 +1343,7 @@ class NexaInterface(tk.Tk):
 		def setup_client():
 			try:
 				if not self.client_wrapper.start_client("auto", 9102):
-					self.after(0, lambda: messagebox.showerror("Erreur", "Une connexion est déjà en cours"))
+					self.after(0, lambda: show_error("Une connexion est déjà en cours"))
 					return
 					
 				self.client = self.client_wrapper.client
@@ -1390,16 +1352,19 @@ class NexaInterface(tk.Tk):
 				self.after(0, lambda: self.key_var.set(self.client.pubKey))
 				self.after(0, self.show_chat_interface)
 
-				redirect = MessageRedirect(self.chat_text, pseudo, save_message_callback=self.save_message)
+				# redirige stdout sans stocker de pseudo UI
+				redirect = MessageRedirect(self.chat_text, save_message_callback=self.save_message)
 				self.original_stdout = sys.stdout
 				sys.stdout = redirect
+				# input() renvoyant toujours le login pour l'enregistrement serveur
+				login = os.getlogin()
 				self.original_input = __builtins__.input
-				__builtins__.input = self.mock_input
+				__builtins__.input = lambda prompt="": login
 
 			except Exception as e:  # En cas d'erreur, revenir à l'écran de connexion
-				self.after(0, lambda: self.status.set(f"Erreur : {str(e)}"))
+				self.after(0, lambda: self.status.set(f"Erreur : {e}"))
 				self.after(0, lambda: self.connect_button.config(state=tk.NORMAL))
-				self.after(0, lambda e=e: messagebox.showerror("Erreur", f"Impossible de se connecter. ({e})"))
+				self.after(0, lambda e=e: show_error(f"Impossible de se connecter. ({e})"))
 				self.after(0, self.show_login_interface)
 		threading.Thread(target=setup_client, daemon=True).start()
 
@@ -1440,7 +1405,7 @@ class NexaInterface(tk.Tk):
 		Simule la fonction input() pour le client.
 		'''
 		if "pseudo" in prompt.lower():
-			return self.pseudo.get().strip()
+			return os.getlogin()
 		elif "destinataire" in prompt.lower() or "clé" in prompt.lower():
 			future = queue.Queue()
 			self.key_queue.put(future)
@@ -1514,7 +1479,7 @@ class NexaInterface(tk.Tk):
 		Gère l'envoi des messages.
 		'''
 		if not self.connected or not hasattr(self, 'client') or not self.client:
-			messagebox.showerror("Erreur", "Vous n'êtes pas connecté.")
+			show_error("Vous n'êtes pas connecté.")
 			return
 		message = self.message_to_send.get().strip()
 		if not message:
@@ -1540,7 +1505,7 @@ class NexaInterface(tk.Tk):
 				primary, secondary = parsed
 				# Empêche les couleurs trop claires
 				if luminosite(primary) > 200:
-					messagebox.showerror("Erreur", "Cette couleur est trop claire. Essaye une autre !")
+					show_error("Cette couleur est trop claire. Essaye une autre !")
 					return
 
 				self.primary_color = primary
@@ -1625,7 +1590,7 @@ class NexaInterface(tk.Tk):
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
 			except Exception as e:
-				messagebox.showerror(f"Erreur", f"Erreur lors de la suppression de l'historique. ({str(e)})")
+				show_error(f"Erreur lors de la suppression de l'historique. ({e})")
 			self.message_to_send.set("")
 			return
 		if message == "/clear all":
@@ -1643,14 +1608,14 @@ class NexaInterface(tk.Tk):
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
 			except Exception as e:
-				messagebox.showerror("Erreur", f"Erreur lors de la suppression de tous les messages. ({e})")
+				show_error(f"Erreur lors de la suppression de tous les messages. ({e})")
 			self.message_to_send.set("")
 			return
 		
 		# Vérification de la longueur du message (sans compter les espaces)
 		message_no_spaces = message.replace(" ", "")
 		if len(message_no_spaces) > 10000:
-			messagebox.showerror("Erreur", "Le message est trop long. La limite est de 10000 caractères (espaces non compris).")
+			show_error("Le message est trop long. La limite est de 10000 caractères (espaces non compris).")
 			return
 		
 		# Il faut qu'un contact soit sélectionné pour envoyer
