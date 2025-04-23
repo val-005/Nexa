@@ -1,8 +1,8 @@
-import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, sys, os, platform, signal, locale, sqlite3, configparser, queue, time, concurrent.futures, re, tkinter as tk
+import os, sys, threading, time, asyncio, random, sqlite3, configparser, re, queue, concurrent.futures, platform, signal, requests, pyperclip, websockets, ast, locale, uuid, tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, StringVar
+from datetime import datetime, timedelta
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
-from datetime import datetime, timedelta
 from PIL import Image, ImageTk
 
 if getattr(sys, 'frozen', False):
@@ -36,58 +36,64 @@ node_detection_callback = None
 app = None
 stop_async_getnodes = False  # Ajout d'un flag global pour stopper la recherche des nœuds
 
-COLOR_CHOICES = {
-	'dark grey': ('#424242', '#212121'),	'gris foncé': ('#424242', '#212121'),
-	'dark blue': ('#1565c0', '#0d47a1'),	'bleu foncé': ('#1565c0', '#0d47a1'),
-	'light green': ('#7ED957', '#388E3C'),	'vert clair': ('#7ED957', '#388E3C'),
-	'light green': ('#00FF00', '#00FF00'),	'vert clair': ('#00FF00', '#00FF00'),
-	'light blue': ('#339CFF', '#1976D2'),	'bleu clair': ('#339CFF', '#1976D2'),
-	'reset': ('#339CFF', '#1976D2'),		'default': ('#339CFF', '#1976D2'),
-	'purple': ('#8e24aa', '#512da8'),		'violet': ('#8e24aa', '#512da8'),
-	'red': ('#D50000', '#B71C1C'),			'rouge': ('#D50000', '#B71C1C'),
-	'yellow': ('#FFEB3B', '#FBC02D'),		'jaune': ('#FFEB3B', '#FBC02D'),
-	'green': ('#388E3C', '#1B5E20'),		'vert': ('#388E3C', '#1B5E20'),
-	'pink': ('#FF69B4', '#C2185B'),			'rose': ('#FF69B4', '#C2185B'),
-	'black': ('#212121', '#000000'),		'noir': ('#212121', '#000000'),
-	'blue': ('#1976d2', '#0d47a1'),			'bleu': ('#1976d2', '#0d47a1'),
-	'orange': ('#FF9800', '#F57C00'),
+# Fonction utilitaire pour assombrir une couleur hexadécimale
+def darken(hex_color, factor=0.8):
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
+
+# Fonction calculant la luminosité d'une couleur hexadécimale
+def luminosite(hex_color):
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+# Choix de couleur de base et alias pour éviter doublons
+base_colors = {
+    'dark grey': ('#424242', '#212121'),
+    'dark blue': ('#1565c0', '#0d47a1'),
+    'light green': ('#7ED957', '#388E3C'),
+    'light blue': ('#339CFF', '#1976D2'),
+    'purple': ('#8e24aa', '#512da8'),
+    'red': ('#D50000', '#B71C1C'),
+    'yellow': ('#FFEB3B', '#FBC02D'),
+    'green': ('#388E3C', '#1B5E20'),
+    'pink': ('#FF69B4', '#C2185B'),
+    'black': ('#212121', '#000000'),
+    'blue': ('#1976d2', '#0d47a1'),
+    'orange': ('#FF9800', '#F57C00'),
 }
+COLOR_CHOICES = dict(base_colors)
+aliases = {
+    'gris foncé': 'dark grey', 'bleu foncé': 'dark blue',
+    'vert clair': 'light green', 'bleu clair': 'light blue',
+    'violet': 'purple', 'rouge': 'red', 'jaune': 'yellow',
+    'vert': 'green', 'rose': 'pink', 'noir': 'black', 'bleu': 'blue',
+}
+for alias_name, ref in aliases.items():
+    COLOR_CHOICES[alias_name] = base_colors[ref]
 
 def parse_color_input(color_input):
 	"""
 	Permet d'utiliser /color #hex ou /color rgb(r,g,b) pour choisir la couleur principale.
-	Retourne (primary, secondary) ou None si invalide.
+	Retourne primary, secondary ou None si invalide.
 	"""
 	color_input = color_input.strip()
-	# Hex format: #RRGGBB
+	# Format hexadécimal : #RRGGBB
 	hex_match = re.fullmatch(r'#([0-9a-fA-F]{6})', color_input)
 	if hex_match:
 		primary = f"#{hex_match.group(1)}"
 		# Génère une couleur secondaire plus foncée
-		def darken(hex_color, factor=0.8):
-			r = int(hex_color[1:3], 16)
-			g = int(hex_color[3:5], 16)
-			b = int(hex_color[5:7], 16)
-			r = int(r * factor)
-			g = int(g * factor)
-			b = int(b * factor)
-			return f"#{r:02x}{g:02x}{b:02x}"
 		secondary = darken(primary)
 		return (primary, secondary)
-	# RGB format: rgb(r,g,b)
+	# Format RGB : rgb(r,g,b)
 	rgb_match = re.fullmatch(r'rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)', color_input, re.IGNORECASE)
 	if rgb_match:
 		r, g, b = map(int, rgb_match.groups())
 		if all(0 <= v <= 255 for v in (r, g, b)):
 			primary = f"#{r:02x}{g:02x}{b:02x}"
-			def darken(hex_color, factor=0.8):
-				r = int(hex_color[1:3], 16)
-				g = int(hex_color[3:5], 16)
-				b = int(hex_color[5:7], 16)
-				r = int(r * factor)
-				g = int(g * factor)
-				b = int(b * factor)
-				return f"#{r:02x}{g:02x}{b:02x}"
 			secondary = darken(primary)
 			return (primary, secondary)
 	return None
@@ -240,7 +246,7 @@ class Client:
 	@staticmethod
 	def verify_key(key):
 		'''
-		Vérifie si une clé publique est au bon format hexadécimal compressé (66 hex).
+		Vérifie si une clé publique est au bon format hexadécimale compressé (66 hex).
 		'''
 		if isinstance(key, str) and key.strip() and len(key) == 66:
 			try:
@@ -371,7 +377,7 @@ class Client:
 							await websocket.send(f"{pseudo};{msgEncrypt.hex()};{recipient_key};{msg_id}")
 							print(f"Toi: {message}")
 							message_queue.task_done()
-							await asyncio.sleep(0.01)	# Légère pause pour éviter de surcharger le serveur
+							await asyncio.sleep(0.01)		# Légère pause pour éviter de surcharger le serveur
 						except asyncio.CancelledError:
 							break
 						except Exception as e:
@@ -541,8 +547,6 @@ class MessageRedirect:
 		self.original_stdout = sys.stdout
 		self.updating = True
 		self.save_message_callback = save_message_callback
-		self.root = None
-		self.get_contact_pseudo = None  # Ajout pour accès au pseudo du contact sélectionné
 		threading.Thread(target=self.update_loop, daemon=True).start()
 
 	def write(self, string):
@@ -1243,9 +1247,7 @@ class NexaInterface(tk.Tk):
 					  font=(self.default_font, 9, 'bold'),
 					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
 		dialog.bind("<Return>", lambda e: _on_add())
-		dialog.bind("<Escape>", lambda e: dialog.destroy())		# // Escape
-		pseudo_var.set("")
-		pubkey_var.set("")
+		dialog.bind("<Escape>", lambda e: dialog.destroy())		
 
 		 # S'assure que la fenêtre reste au premier plan si on clique ailleurs
 		def keep_on_top(event=None):
@@ -1537,13 +1539,7 @@ class NexaInterface(tk.Tk):
 			if parsed:
 				primary, secondary = parsed
 				# Empêche les couleurs trop claires
-				def brightness(hex_color):
-					r = int(hex_color[1:3], 16)
-					g = int(hex_color[3:5], 16)
-					b = int(hex_color[5:7], 16)
-					return 0.2126 * r + 0.7152 * g + 0.0722 * b		# Calcul de la luminance
-
-				if brightness(primary) > 200:
+				if luminosite(primary) > 200:
 					messagebox.showerror("Erreur", "Cette couleur est trop claire. Essaye une autre !")
 					return
 
@@ -1638,6 +1634,11 @@ class NexaInterface(tk.Tk):
 				self.msg_db.commit()
 				self.chat_text.config(state=tk.NORMAL)
 				self.chat_text.delete(1.0, tk.END)
+				# Afficher la date du jour
+				date_str = datetime.now().strftime("%A %d %B %Y")
+				date_str = date_str[0].upper() + date_str[1:]
+				self.chat_text.insert(tk.END, "\n", "system_message")
+				self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
 				self.chat_text.insert(tk.END, "Tous les messages ont été effacés.\n", "system_message_center")
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
