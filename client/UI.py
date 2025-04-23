@@ -1167,7 +1167,7 @@ class NexaInterface(tk.Tk):
 		pw, ph = self.winfo_width(), self.winfo_height()
 		x = px + (pw - 270)//2; y = py + (ph - 115)//2
 		dialog.geometry(f"270x115+{x}+{y}")
-		self.after(700, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
+		self.after(100, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
 		dialog.minsize(270, 115)									# Taille min de la fenêtre de création de contact
 		dialog.maxsize(700, 115)
 		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
@@ -1264,6 +1264,8 @@ class NexaInterface(tk.Tk):
 		self.msg_entry.master.pack(fill=tk.X, side=tk.BOTTOM)
 		# Recharge l'historique à chaque sélection
 		self.load_message_history_for_contact(pseudo, pubkey)
+		# Donne le focus à la zone de saisie du message
+		self.msg_entry.focus_set()
 
 	def load_message_history_for_contact(self, contact_pseudo, contact_pubkey=None):
 		self.chat_text.config(state=tk.NORMAL)
@@ -1327,14 +1329,26 @@ class NexaInterface(tk.Tk):
 			self.contact_menu.grab_release()
 
 	def delete_contact(self):
-		'''Supprime le contact sélectionné après confirmation.'''
+		'''Supprime le contact sélectionné après confirmation et efface l'historique de la conversation.'''
 		sel = self.contacts_listbox.curselection()
 		if not sel: return
-		pseudo, _ = self.contacts[sel[0]]
+		pseudo, pubkey = self.contacts[sel[0]]
 		if messagebox.askyesno("Supprimer", f"Supprimer le contact '{pseudo}' ?"):
+			# Efface l'historique des messages pour ce contact (équivalent à /clear)
+			try:
+				self.msg_cursor.execute("DELETE FROM message WHERE \"to\"=?", (pubkey,))
+				self.msg_db.commit()
+			except Exception as e:
+				messagebox.showerror("Erreur", f"Erreur lors de la suppression de l'historique. ({str(e)})")
 			self.contacts_cursor.execute("DELETE FROM contacts WHERE pseudo=?", (pseudo,))
 			self.contacts_db.commit()
 			self.load_contacts()
+			# Vide la zone de chat et affiche le message comme /clear
+			self.chat_text.config(state=tk.NORMAL)
+			self.chat_text.delete(1.0, tk.END)
+			self.chat_text.insert(tk.END, "Historique de la conversation effacé.\n", "system_message_center")
+			self.chat_text.config(state=tk.DISABLED)
+			self.chat_text.see(tk.END)
 
 	def connect(self):
 		'''
