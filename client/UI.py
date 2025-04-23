@@ -11,9 +11,14 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Définir le dossier de données commun (AppData\Roaming\NexaChat)
+appdata = os.getenv('APPDATA') or os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming')
+DATA_DIR = os.path.join(appdata, 'NexaChat')
+os.makedirs(DATA_DIR, exist_ok=True)
+
 # Chemin pour lecture (dans le bundle) et écriture (user_data_dir)
 SETTINGS_BUNDLE_PATH = os.path.join(SCRIPT_DIR, "settings.ini")
-SETTINGS_USER_PATH = os.path.join(user_data_dir("Nexa", "Nexa"), "settings.ini")
+SETTINGS_USER_PATH = os.path.join(DATA_DIR, "settings.ini")
 
 try:
 	locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
@@ -142,7 +147,7 @@ def get_nodes():
 			node_detection_callback(nodes)
 		return nodes
 	except Exception as e:
-		messagebox.showerror(f"Erreur", "Erreur lors de la recherche des nœuds. ({e})")
+		messagebox.showerror("Erreur", f"Erreur lors de la recherche des nœuds. ({e})")
 		if node_detection_callback:
 			node_detection_callback([])
 		return []
@@ -172,8 +177,8 @@ class Client:
 		self.host = host
 		self.port = port
 		
-		privkey_path = os.path.join(SCRIPT_DIR, "privkey.key")
-		
+		# Utilise un dossier persistant pour la clé privée
+		privkey_path = os.path.join(DATA_DIR, "privkey.key")
 		try:
 			with open(privkey_path, "r") as f:
 				content = f.read().strip()
@@ -204,7 +209,7 @@ class Client:
 		
 		# Chargement persistant des messages déjà vus (ne jamais réinitialiser)
 		self.seen_messages = set()
-		self.seen_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "seen_messages.db"), check_same_thread=False)
+		self.seen_db = sqlite3.connect(os.path.join(DATA_DIR, "seen_messages.db"), check_same_thread=False)
 		self.seen_cursor = self.seen_db.cursor()
 		self.seen_cursor.execute('''CREATE TABLE IF NOT EXISTS seen_messages (msg_id TEXT PRIMARY KEY)''')
 		self.seen_db.commit()
@@ -220,12 +225,11 @@ class Client:
 		asyncio.set_event_loop(self.loop)
 		self.websocket = None
 
-		data_dir = user_data_dir("Nexa", "Nexa")
-		db_path = os.path.join(SCRIPT_DIR, "message.db")
+		db_path = os.path.join(DATA_DIR, "messagesUI.db")
 		self.msg_db = sqlite3.connect(db_path, check_same_thread=False)
 
-		# contacts database setup: always use contacts.db in SCRIPT_DIR
-		self.contacts_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "contacts.db"), check_same_thread=False)
+		# contacts database setup: always use contacts.db in DATA_DIR
+		self.contacts_db = sqlite3.connect(os.path.join(DATA_DIR, "contacts.db"), check_same_thread=False)
 		self.contacts_cursor = self.contacts_db.cursor()
 		self.contacts_cursor.execute('''CREATE TABLE IF NOT EXISTS contacts (
 			pseudo TEXT NOT NULL UNIQUE,
@@ -245,7 +249,7 @@ class Client:
 				return True
 			except ValueError:
 				return False
-		return False
+		return None
 
 	async def receive_messages(self):
 		"""
@@ -293,7 +297,7 @@ class Client:
 				messagebox.showerror("Erreur", "Connexion au serveur perdue.")
 		except Exception as e:
 			if not self.quitting:
-				messagebox.showerror(f"Erreur", "Erreur lors de la réception du message. ({e})")
+				messagebox.showerror("Erreur", f"Erreur lors de la réception du message. ({e})")
 
 	async def send_message_with_key(self, message, recipient_key, pseudo):
 		'''
@@ -320,7 +324,7 @@ class Client:
 			print(f"Toi: {message}")					# Simule la réception de son propre message avec "Toi:" au lieu du pseudo)
 			return True
 		except Exception as e:
-			messagebox.showerror(f"Erreur", "Erreur lors de l'envoi du message. ({e})")
+			messagebox.showerror("Erreur", f"Erreur lors de l'envoi du message. ({e})")
 			return False
 
 	async def connect_and_send(self):
@@ -408,7 +412,7 @@ class Client:
 			pass
 		except Exception as e:
 			if not self.quitting:
-				messagebox.showerror(f"Erreur", "Problème de connexion au serveur. ({e})")
+				messagebox.showerror("Erreur", f"Problème de connexion au serveur. ({e})")
 
 	async def keep_connection_alive(self, interval=30):
 		try:
@@ -421,7 +425,7 @@ class Client:
 						await self.reconnect()			# Tentative de reconnexion si le ping échoue
 		except Exception as e:
 			if not self.quitting:
-				messagebox.showerror(f"Erreur", "Erreur inattendue dans le maintien de la connexion. ({e})")
+				messagebox.showerror("Erreur", f"Erreur inattendue dans le maintien de la connexion. ({e})")
 
 	async def reconnect(self):
 		'''
@@ -431,7 +435,7 @@ class Client:
 			#print("Tentative de reconnexion...")
 			await self.connect_and_send()
 		except Exception as e:
-			messagebox.showerror(f"Erreur", "Échec de la reconnexion. ({e})")
+			messagebox.showerror("Erreur", f"Échec de la reconnexion. ({e})")
 
 	def start(self):
 		'''
@@ -473,7 +477,7 @@ class WrapperClient:
         except Exception as e:
             # Ne pas afficher l'erreur spécifique de la boucle événementielle
             if "Event loop stopped before Future completed" not in str(e):
-                messagebox.showerror(f"Erreur", "Erreur dans le client. ({e})")
+                messagebox.showerror("Erreur", f"Erreur dans le client. ({e})")
         finally:
             self.client = None
         
@@ -592,12 +596,24 @@ class MessageRedirect:
 								if len(parts) >= 2:
 									sender, message = parts[0], parts[1]
 									time_str = datetime.now().strftime("%H:%M")
+									# Détermine qui affiche : Toi ou nom du contact sélectionné
+									parent = self.text_widget.master
+									while parent and not hasattr(parent, 'current_contact_pubkey'):
+										parent = getattr(parent, 'master', None)
 									if sender.strip() == self.pseudo.strip():
-										self.text_widget.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
-										self.text_widget.insert(tk.END, f"{message.strip()}", "message_sent")
+										display = 'Toi'
+										tag = 'message_sent'
 									else:
-										self.text_widget.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
-										self.text_widget.insert(tk.END, f"{message.strip()}", "message_received")
+										# Affiche le nom du contact sélectionné
+										display = sender
+										if parent and parent.current_contact_pubkey:
+											for pseudo_name, pk in parent.contacts:
+												if pk == parent.current_contact_pubkey:
+													display = pseudo_name
+													break
+										tag = 'message_received'
+									self.text_widget.insert(tk.END, f"[{time_str}] {display}: ", "sender_name")
+									self.text_widget.insert(tk.END, message.strip(), tag)
 									self.text_widget.insert(tk.END, "\n", "")
 							except Exception as e:
 								self.text_widget.insert(tk.END, string)
@@ -621,7 +637,7 @@ class NexaInterface(tk.Tk):
 	def __init__(self):
 		super().__init__()
 		self.withdraw()
-		self.title("Nexa Chat")
+		self.title("NexaChat")
 		self.geometry("600x700")			# Taille de la fenêtre (largeur x hauteur)
 		self.minsize(600, 600)				# Taille minimale
 
@@ -728,29 +744,28 @@ class NexaInterface(tk.Tk):
 		self.client_wrapper = WrapperClient()
 
 		if platform.system() == "Windows":
-			icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
+			icon_path = os.path.join(SCRIPT_DIR, "Nexa.ico")
 			if os.path.exists(icon_path):
 				try:
 					self.iconbitmap(icon_path)
 				except Exception as e:
-					messagebox.showerror(f"Erreur", "L'icône Windows n'a pas pu être chargée. ({e})", file=sys.stdout)
+					messagebox.showerror("Erreur", f"L'icône Nexa.ico n'a pas pu être chargée. ({e})", file=sys.stdout)
 
-		data_dir = user_data_dir("Nexa", "Nexa")
-		db_path = os.path.join(SCRIPT_DIR, "message.db")
-		self.msg_db = sqlite3.connect(db_path, check_same_thread=False)
+		self.msg_db = sqlite3.connect(os.path.join(DATA_DIR, "messagesUI.db"), check_same_thread=False)
 
 		self.msg_cursor = self.msg_db.cursor()
 		self.msg_cursor.execute('''
 			CREATE TABLE IF NOT EXISTS message (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				sender TEXT,
+				"to" TEXT,
 				message TEXT,
 				timestamp TEXT
 			)
 		''')
 		self.msg_db.commit()
 
-		self.contacts_db = sqlite3.connect(os.path.join(SCRIPT_DIR, "contacts.db"), check_same_thread=False)
+		self.contacts_db = sqlite3.connect(os.path.join(DATA_DIR, "contacts.db"), check_same_thread=False)
 		self.contacts_cursor = self.contacts_db.cursor()
 		self.contacts_cursor.execute('''
 			CREATE TABLE IF NOT EXISTS contacts (
@@ -760,6 +775,8 @@ class NexaInterface(tk.Tk):
 		''')
 		self.contacts_db.commit()
 		self.current_contact_pubkey = None
+
+		self.seen_db = sqlite3.connect(os.path.join(DATA_DIR, "seen_messages.db"), check_same_thread=False)
 
 		self.create_widgets()
 		self.load_message_history()			# Charge l'historique des messages précédents
@@ -815,7 +832,7 @@ class NexaInterface(tk.Tk):
 		self.login_frame = ttk.Frame(main_frame, padding=20)	
 		self.login_frame.pack(fill=tk.BOTH, expand=True, pady=(60, 0))  # Ajout d'un padding vertical
 		
-		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.png")
+		icon_path = os.path.join(SCRIPT_DIR, "Nexa.png")
 		if os.path.exists(icon_path):
 			try:
 				pil_image = Image.open(icon_path)
@@ -919,9 +936,9 @@ class NexaInterface(tk.Tk):
 		paned.paneconfigure(contacts_frame, minsize=150)
 		contacts_label = ttk.Label(contacts_frame, text="Contacts", font=(self.default_font, 12, 'bold'))
 		contacts_label.pack(pady=(2, 2))
-		self.contacts_listbox = tk.Listbox(contacts_frame, font=(self.default_font, 10, 'normal'))
+		self.contacts_listbox = tk.Listbox(contacts_frame, font=(self.default_font, 10, 'normal'), exportselection=False)
 		self.contacts_listbox.pack(fill=tk.BOTH, expand=True, pady=(2, 2))
-		self.contacts_listbox.config(selectbackground=self.contacts_listbox['bg'], selectforeground=self.contacts_listbox['fg'])
+		self.contacts_listbox.config(selectbackground=self.primary_color, selectforeground='white')
 		contacts_btn = tk.Button(contacts_frame, text="Ajouter", command=self.fenêtre_contacts,
 									bg=self.primary_color, fg="white", font=(self.default_font, 9, 'bold'),
 									relief=tk.RAISED, borderwidth=0, cursor="hand2")
@@ -929,9 +946,9 @@ class NexaInterface(tk.Tk):
 
 		# menu contextuel sur contacts
 		self.contact_menu = tk.Menu(self, tearoff=0)
-		self.contact_menu.add_command(label="Modifier", command=self.edit_contact)
 		self.contact_menu.add_command(label="Supprimer", command=self.delete_contact)
-		self.contacts_listbox.bind("<<ListboxSelect>>", lambda e: self.on_contact_select())
+		# Correction : ne pas déselectionner le contact lors de la sélection de texte dans le chat
+		self.contacts_listbox.bind("<ButtonRelease-1>", lambda e: self.on_contact_select())
 		self.contacts_listbox.bind("<Button-3>", self.show_contact_menu)
 
 		 # Chat area as pane
@@ -949,6 +966,8 @@ class NexaInterface(tk.Tk):
 												)
 		self.chat_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 		self.chat_text.config(state=tk.DISABLED)
+		# Empêcher la déselection du contact lors d'un double-clic dans la zone de chat
+		self.chat_text.bind('<Double-Button-1>', lambda e: 'break')
 
 		# Configuration des tags pour le formatage du texte
 		self.chat_text.tag_configure("message_sent",
@@ -1035,36 +1054,38 @@ class NexaInterface(tk.Tk):
 
 	def load_message_history(self):
 		'''
-		Charge l'historique des messages stockés dans message.db et les affiche.
+		Charge l'historique des messages stockés dans messagesUI.db et les affiche.
 		'''
 		try:
-			self.msg_cursor.execute("SELECT sender, message, timestamp FROM message ORDER BY id")
+			self.msg_cursor.execute("SELECT sender, \"to\", message, timestamp FROM message ORDER BY id")
 			rows = self.msg_cursor.fetchall()
 			self.chat_text.config(state=tk.NORMAL)
 			self.chat_text.delete(1.0, tk.END)
-			for sender, message, timestamp in rows:
+			for sender, to, message, timestamp in rows:
 				time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
 				self.chat_text.insert(tk.END, f"[{time_str}] {sender}: ", "sender_name")
 				self.chat_text.insert(tk.END, f"{message}\n", "message_received")
 			self.chat_text.config(state=tk.DISABLED)
 			self.chat_text.see(tk.END)
 		except Exception as e:
-			messagebox.showerror(f"Erreur", "Erreur lors du chargement de l'historique. ({e})", file=sys.stdout)
+			messagebox.showerror("Erreur", f"Erreur lors du chargement de l'historique. ({str(e)})", file=sys.stdout)
 
-	def save_message(self, sender, message, timestamp):
+	def save_message(self, sender, message, timestamp, to=None):
 		'''
-		Sauvegarde les messages dans message.db uniquement s'ils n'existent pas déjà.
+		Sauvegarde les messages dans messagesUI.db uniquement s'ils n'existent pas déjà.
 		'''
 		if sender.strip().lower() in ("vous", "toi"):
 			sender = "Toi"
+		if to is None:
+			to = getattr(self, 'current_contact_pubkey', None)
 		try:
-			self.msg_cursor.execute("SELECT 1 FROM message WHERE sender=? AND message=? AND timestamp=?", (sender, message, timestamp))
+			self.msg_cursor.execute("SELECT 1 FROM message WHERE sender=? AND \"to\"=? AND message=? AND timestamp=?", (sender, to, message, timestamp))
 			if self.msg_cursor.fetchone():
 				return
-			self.msg_cursor.execute("INSERT INTO message (sender, message, timestamp) VALUES (?, ?, ?)", (sender, message, timestamp))
+			self.msg_cursor.execute("INSERT INTO message (sender, \"to\", message, timestamp) VALUES (?, ?, ?, ?)", (sender, to, message, timestamp))
 			self.msg_db.commit()
 		except Exception as e:
-			messagebox.showerror(f"Erreur", "Erreur lors de la sauvegarde du message. ({e})", file=sys.stdout)
+			messagebox.showerror("Erreur", f"Erreur lors de la sauvegarde du message. ({str(e)})", file=sys.stdout)
 
 	def load_contacts(self):
 		'''
@@ -1121,8 +1142,7 @@ class NexaInterface(tk.Tk):
 		pw, ph = self.winfo_width(), self.winfo_height()
 		x = px + (pw - 270)//2; y = py + (ph - 115)//2
 		dialog.geometry(f"270x115+{x}+{y}")
-		dialog.deiconify(); dialog.lift(); dialog.focus_force()
-		dialog.attributes('-topmost', 1)
+		self.after(700, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
 		dialog.minsize(270, 115)									# Taille min de la fenêtre de création de contact
 		dialog.maxsize(700, 115)
 		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
@@ -1130,7 +1150,7 @@ class NexaInterface(tk.Tk):
 		# permettre aux colonnes de s'étendre
 		content_frame.columnconfigure(1, weight=1)
 		dialog.title("Nouveau contact")
-		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
+		icon_path = os.path.join(SCRIPT_DIR, "Nexa.ico")
 		if os.path.exists(icon_path):
 			try:
 				dialog.iconbitmap(icon_path)
@@ -1223,36 +1243,49 @@ class NexaInterface(tk.Tk):
 	def load_message_history_for_contact(self, contact_pseudo, contact_pubkey=None):
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
-		# Affiche la date uniquement si un contact est sélectionné
-		if contact_pseudo is not None and contact_pubkey is not None:
-			current_date = datetime.now().strftime("%A %d %B %Y")
-			current_date = current_date[0].upper() + current_date[1:]
-			self.chat_text.insert(tk.END, "\n", "system_message")
-			self.chat_text.insert(tk.END, current_date + "\n", "system_message_center")
 		my_pseudo = self.pseudo.get().strip()
-		if contact_pubkey is None:
-			self.msg_cursor.execute("SELECT sender, message, timestamp FROM message WHERE sender=?", (contact_pseudo,))
-			rows = self.msg_cursor.fetchall()
+		my_pubkey = self.key_var.get().strip()
+		self.msg_cursor.execute("SELECT sender, \"to\", message, timestamp FROM message WHERE (\"to\"=? OR sender=?) ORDER BY id", (contact_pubkey, contact_pubkey))
+		rows = self.msg_cursor.fetchall()
+		# Grouper les messages par date
+		messages_by_date = {}
+		for sender, to, message, timestamp in rows:
+			msg_date = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").date()
+			messages_by_date.setdefault(msg_date, []).append((sender, to, message, timestamp))
+		# Afficher les messages par date
+		if not messages_by_date:
+			# Affiche la date du jour même si aucun message
+			date_str = datetime.now().strftime("%A %d %B %Y")
+			date_str = date_str[0].upper() + date_str[1:]
+			self.chat_text.insert(tk.END, "\n", "system_message")
+			self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
 		else:
-			# Affiche tous les messages échangés entre l'utilisateur et le contact (dans les deux sens)
-			self.msg_cursor.execute("""
-                SELECT sender, message, timestamp FROM message
-                WHERE (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
-                   OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
-                   OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
-                   OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))
-                ORDER BY id
-            """, (my_pseudo, contact_pseudo, contact_pseudo, my_pseudo, my_pseudo, my_pseudo, contact_pseudo, contact_pseudo))
-			rows = self.msg_cursor.fetchall()
-		for sender, message, timestamp in rows:
-			time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
-			tag = "message_received"
-			display_sender = sender
-			if sender == my_pseudo:
-				tag = "message_sent"
-				display_sender = "Toi"
-			self.chat_text.insert(tk.END, f"[{time_str}] {display_sender}: ", "sender_name")
-			self.chat_text.insert(tk.END, f"{message}\n", tag)
+			for msg_date in sorted(messages_by_date.keys()):
+				day_msgs = messages_by_date[msg_date]
+				if not day_msgs:
+					continue
+				date_str = msg_date.strftime("%A %d %B %Y")
+				date_str = date_str[0].upper() + date_str[1:]
+				self.chat_text.insert(tk.END, "\n", "system_message")
+				self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
+				for sender, to, message, timestamp in day_msgs:
+					time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
+					if my_pubkey == contact_pubkey:
+						if sender == "Toi":
+							display_sender = "Toi"
+							tag = "message_sent"
+						else:
+							display_sender = contact_pseudo
+							tag = "message_received"
+					else:
+						if sender == my_pubkey or sender == my_pseudo or sender == "Toi":
+							display_sender = "Toi"
+							tag = "message_sent"
+						else:
+							display_sender = contact_pseudo
+							tag = "message_received"
+					self.chat_text.insert(tk.END, f"[{time_str}] {display_sender}: ", "sender_name")
+					self.chat_text.insert(tk.END, f"{message}\n", tag)
 		self.chat_text.config(state=tk.DISABLED)
 		self.chat_text.see(tk.END)
 
@@ -1276,99 +1309,6 @@ class NexaInterface(tk.Tk):
 			self.contacts_cursor.execute("DELETE FROM contacts WHERE pseudo=?", (pseudo,))
 			self.contacts_db.commit()
 			self.load_contacts()
-
-	def edit_contact(self):
-		'''Ouvre le dialogue de modification pour le contact sélectionné.'''
-		sel = self.contacts_listbox.curselection()
-		if not sel: return
-		pseudo, pubkey = self.contacts[sel[0]]
-
-		# Empêche l'ouverture de plusieurs fenêtres de modification
-		if getattr(self, 'edit_contact_dialog', None) and self.edit_contact_dialog.winfo_exists():
-			self.edit_contact_dialog.lift()
-			self.edit_contact_dialog.focus_force()
-			self.edit_contact_dialog.attributes('-topmost', 1)
-			return
-		dialog = tk.Toplevel(self)
-		self.edit_contact_dialog = dialog
-		dialog.withdraw()
-		dialog.geometry("270x115")
-		dialog.update_idletasks()
-		px, py = self.winfo_rootx(), self.winfo_rooty()
-		pw, ph = self.winfo_width(), self.winfo_height()
-		x = px + (pw - 270)//2; y = py + (ph - 115)//2
-		dialog.geometry(f"270x115+{x}+{y}")
-		dialog.deiconify(); dialog.lift(); dialog.focus_force()
-		dialog.attributes('-topmost', 1)
-		dialog.minsize(270, 115)
-		dialog.maxsize(700, 115)
-		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
-		content_frame.pack(fill=tk.BOTH, expand=True)
-		content_frame.columnconfigure(1, weight=1)
-		dialog.title("Modifier contact")
-		icon_path = os.path.join(SCRIPT_DIR, "NexaIcon.ico")
-		if os.path.exists(icon_path):
-			try:
-				dialog.iconbitmap(icon_path)
-			except:
-				pass
-
-		ttk.Label(content_frame, text="Pseudo :").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-		pseudo_var = StringVar(value=pseudo)
-		pseudo_entry = ttk.Entry(content_frame, textvariable=pseudo_var)
-		pseudo_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
-		pseudo_entry.focus_set()
-
-		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
-		pubkey_var = StringVar(value=pubkey)
-		pubkey_entry = ttk.Entry(content_frame, textvariable=pubkey_var)
-		pubkey_entry.grid(row=1, column=1, padx=5, pady=5, sticky='we')
-
-		btn_frame = ttk.Frame(content_frame)
-		btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
-
-		def _on_save():
-			new_pseudo = pseudo_var.get().strip()
-			new_key = pubkey_var.get().strip()
-			if not new_pseudo or not new_key:
-				return
-			if not Client.verify_key(new_key):
-				messagebox.showerror("Erreur", "Assure-toi d’avoir correctement saisi la clé publique !", parent=dialog)
-				pubkey_entry.focus_set()
-				return
-			try:
-				self.contacts_cursor.execute("UPDATE contacts SET pseudo=?, pubkey=? WHERE pseudo=?", (new_pseudo, new_key, pseudo))
-				self.contacts_db.commit()
-				self.load_contacts()
-				dialog.destroy()
-			except sqlite3.IntegrityError:
-				messagebox.showerror("Erreur", "Un contact avec ce pseudo ou cette clé existe déjà.", parent=dialog)
-				pseudo_entry.focus_set()
-
-		if self.is_mac:
-			ttk.Button(btn_frame, text="Enregistrer", command=_on_save).pack(side=tk.LEFT, padx=5)
-			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-		else:
-			tk.Button(btn_frame, text="Enregistrer", command=_on_save,
-					  bg=self.primary_color, fg="white",
-					  font=(self.default_font, 9, 'bold'),
-					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
-			tk.Button(btn_frame, text="Annuler", command=dialog.destroy,
-					  bg=self.primary_color, fg="white",
-					  font=(self.default_font, 9, 'bold'),
-					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
-
-		dialog.bind("<Return>", lambda e: _on_save())
-		dialog.bind("<Escape>", lambda e: dialog.destroy())
-
-		# S'assure que la fenêtre reste au premier plan si on clique ailleurs
-		def keep_on_top(event=None):
-			try:
-				dialog.attributes('-topmost', 1)
-			except:
-				pass
-		dialog.bind('<FocusOut>', keep_on_top)
-		dialog.bind('<Unmap>', keep_on_top)
 
 	def connect(self):
 		'''
@@ -1404,7 +1344,7 @@ class NexaInterface(tk.Tk):
 			except Exception as e:  # En cas d'erreur, revenir à l'écran de connexion
 				self.after(0, lambda: self.status.set(f"Erreur : {str(e)}"))
 				self.after(0, lambda: self.connect_button.config(state=tk.NORMAL))
-				self.after(0, lambda e=e: messagebox.showerror(f"Erreur", "Impossible de se connecter. ({e})"))
+				self.after(0, lambda e=e: messagebox.showerror("Erreur", f"Impossible de se connecter. ({e})"))
 				self.after(0, self.show_login_interface)
 		threading.Thread(target=setup_client, daemon=True).start()
 
@@ -1488,6 +1428,9 @@ class NexaInterface(tk.Tk):
 		self.style.configure('Header.Subtitle.TLabel', background=self.primary_color)
 		self.style.configure('Status.TLabel', background=self.primary_color)
 		self.chat_text.tag_configure("sender_name", foreground=self.primary_color)
+		# Mise à jour du selectbackground de la Listbox contacts
+		if hasattr(self, 'contacts_listbox'):
+			self.contacts_listbox.config(selectbackground=self.primary_color)
 		# Mise à jour dynamique de tous les boutons
 		def update_buttons(widget):
 			if isinstance(widget, tk.Button):
@@ -1557,34 +1500,83 @@ class NexaInterface(tk.Tk):
 				self.message_to_send.set("")
 				return
 			return
+		if message.startswith("/path"):
+			dialog = tk.Toplevel(self)
+			self.path_dialog = dialog
+			dialog.withdraw()
+			dialog.title("Info")
+			# Ajout de l'icône Nexa.ico
+			icon_path = os.path.join(SCRIPT_DIR, "Nexa.ico")
+			if os.path.exists(icon_path):
+				try:
+					dialog.iconbitmap(icon_path)
+				except Exception:
+					pass
+			w, h = 400, 100
+			dialog.geometry(f"{w}x{h}")
+			dialog.update_idletasks()
+			px, py = self.winfo_rootx(), self.winfo_rooty(); pw, ph = self.winfo_width(), self.winfo_height()
+			x = px + (pw - w)//2; y = py + (ph - h)//2
+			dialog.geometry(f"{w}x{h}+{x}+{y}")
+			dialog.minsize(w,h)						# Taille fenêtre du chemin /path
+			dialog.maxsize(w,h)
+			content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
+			content_frame.pack(fill=tk.BOTH, expand=True)
+			content_frame.columnconfigure(1, weight=1)
+			ttk.Label(content_frame, text="Chemin d'accès aux données et paramètres :", justify='center').pack(anchor='center')
+			ttk.Label(content_frame, text=DATA_DIR, justify='center').pack(anchor='center', pady=(0, 10))
+			btn_frame = ttk.Frame(content_frame)
+			btn_frame.pack(pady=(0, 10))
+			def open_folder():
+				import subprocess, platform
+				if platform.system() == "Windows":
+					os.startfile(DATA_DIR)
+				elif platform.system() == "Darwin":
+					subprocess.Popen(["open", DATA_DIR])
+				else:
+					subprocess.Popen(["xdg-open", DATA_DIR])
+				dialog.destroy()
+			voir_btn = tk.Button(btn_frame, text="Voir", command=open_folder,
+								 bg=self.primary_color, fg="white",
+								 font=(self.default_font, 9, 'bold'),
+								 relief=tk.RAISED, borderwidth=0, cursor="hand2")
+			voir_btn.pack(side=tk.LEFT, padx=5)
+			def copier_et_fermer():
+				pyperclip.copy(DATA_DIR)
+				dialog.destroy()
+			copier_btn = tk.Button(btn_frame, text="Copier", command=copier_et_fermer,
+								   bg=self.primary_color, fg="white",
+								   font=(self.default_font, 9, 'bold'),
+								   relief=tk.RAISED, borderwidth=0, cursor="hand2")
+			copier_btn.pack(side=tk.LEFT, padx=5)
+			dialog.bind("<Escape>", lambda e: dialog.destroy())
+			self.after(200, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
+			self.message_to_send.set("")
+			return
 		if message == "/reconnect":
 			self._reconnecting = True
 			self.disconnect_and_reset()
 			self.message_to_send.set("")
 			return
 		if message == "/clear":
-			# Effacer uniquement l'historique du contact sélectionné
 			if not getattr(self, 'current_contact_pubkey', None):
 				return
-			contact_pubkey = self.current_contact_pubkey
-			# Trouver le pseudo du contact sélectionné
-			contact_pseudo = None
-			for pseudo, pubkey in getattr(self, 'contacts', []):
-				if pubkey == contact_pubkey:
-					contact_pseudo = pseudo
-					break
-			my_pseudo = self.pseudo.get().strip()
+			contact_pubkey = str(self.current_contact_pubkey).strip()
 			try:
-				# Supprimer tous les messages entre l'utilisateur et ce contact
-				self.msg_cursor.execute("DELETE FROM message WHERE (sender=? AND message IN (SELECT message FROM message WHERE sender=?)) OR (sender=? AND message IN (SELECT message FROM message WHERE sender=?))", (my_pseudo, contact_pseudo, contact_pseudo, contact_pseudo, my_pseudo, my_pseudo))
+				self.msg_cursor.execute("DELETE FROM message WHERE \"to\"=?", (contact_pubkey,))
 				self.msg_db.commit()
-				self.load_message_history_for_contact(contact_pseudo, contact_pubkey)
+				pseudo = None
+				for p, pk in self.contacts:
+					if pk == contact_pubkey:
+						pseudo = p
+						break
+				self.load_message_history_for_contact(pseudo, contact_pubkey)
 				self.chat_text.config(state=tk.NORMAL)
 				self.chat_text.insert(tk.END, "Historique de la conversation effacé.\n", "system_message_center")
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
 			except Exception as e:
-				messagebox.showerror(f"Erreur", "Erreur lors de la suppression de l'historique. ({e})")
+				messagebox.showerror(f"Erreur", f"Erreur lors de la suppression de l'historique. ({str(e)})")
 			self.message_to_send.set("")
 			return
 		if message == "/clear all":
@@ -1597,7 +1589,7 @@ class NexaInterface(tk.Tk):
 				self.chat_text.config(state=tk.DISABLED)
 				self.chat_text.see(tk.END)
 			except Exception as e:
-				messagebox.showerror(f"Erreur", "Erreur lors de la suppression de tous les messages. ({e})")
+				messagebox.showerror("Erreur", f"Erreur lors de la suppression de tous les messages. ({e})")
 			self.message_to_send.set("")
 			return
 		
