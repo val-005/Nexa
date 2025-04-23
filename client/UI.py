@@ -1538,14 +1538,14 @@ class NexaInterface(tk.Tk):
 					dialog.iconbitmap(icon_path)
 				except Exception:
 					pass
-			w, h = 400, 100
+			w, h = 300, 100
 			dialog.geometry(f"{w}x{h}")
 			dialog.update_idletasks()
 			px, py = self.winfo_rootx(), self.winfo_rooty(); pw, ph = self.winfo_width(), self.winfo_height()
 			x = px + (pw - w)//2; y = py + (ph - h)//2
 			dialog.geometry(f"{w}x{h}+{x}+{y}")
 			dialog.minsize(w,h)						# Taille fenêtre du chemin /path
-			dialog.maxsize(w,h)
+			dialog.maxsize(600,h)
 			content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
 			content_frame.pack(fill=tk.BOTH, expand=True)
 			content_frame.columnconfigure(1, weight=1)
@@ -1576,7 +1576,7 @@ class NexaInterface(tk.Tk):
 								   relief=tk.RAISED, borderwidth=0, cursor="hand2")
 			copier_btn.pack(side=tk.LEFT, padx=5)
 			dialog.bind("<Escape>", lambda e: dialog.destroy())
-			self.after(200, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
+			self.after(100, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
 			self.message_to_send.set("")
 			return
 		if message == "/reconnect":
