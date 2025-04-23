@@ -554,18 +554,22 @@ class MessageRedirect:
 			# Empêcher l'affichage des messages reçus si aucun contact n'est sélectionné
 			if ": " in string and not any(x in string for x in ("===", "Ta clé", "Connexion")):
 				try:
-					# On tente de récupérer le current_contact_pubkey depuis la fenêtre principale
 					parent = self.text_widget.master
 					while parent and not hasattr(parent, 'current_contact_pubkey'):
 						parent = getattr(parent, 'master', None)
 					if parent and getattr(parent, 'current_contact_pubkey', None) is None:
-						return  # Ne rien afficher si aucun contact sélectionné
+						return
 					parts = string.split(": ", 1)
 					if len(parts) >= 2:
 						sender, message = parts[0], parts[1].strip()
+						# Correction : si sender correspond au pseudo utilisateur, on force "Toi"
+						if sender.strip() == self.pseudo.strip() or sender.strip().lower() in ("toi", "vous"):
+							display_sender = "Toi"
+						else:
+							display_sender = sender
+						timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 						if self.save_message_callback:
-							timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-							self.save_message_callback(sender, message, timestamp)
+							self.save_message_callback(display_sender, message, timestamp)
 				except Exception as e:
 					pass
 			self.queue.put(("message", string))
@@ -596,21 +600,12 @@ class MessageRedirect:
 								if len(parts) >= 2:
 									sender, message = parts[0], parts[1]
 									time_str = datetime.now().strftime("%H:%M")
-									# Détermine qui affiche : Toi ou nom du contact sélectionné
-									parent = self.text_widget.master
-									while parent and not hasattr(parent, 'current_contact_pubkey'):
-										parent = getattr(parent, 'master', None)
-									if sender.strip() == self.pseudo.strip():
+									 # Correction : si sender correspond au pseudo utilisateur, on force "Toi"
+									if sender.strip() == self.pseudo.strip() or sender.strip().lower() in ("toi", "vous"):
 										display = 'Toi'
 										tag = 'message_sent'
 									else:
-										# Affiche le nom du contact sélectionné
 										display = sender
-										if parent and parent.current_contact_pubkey:
-											for pseudo_name, pk in parent.contacts:
-												if pk == parent.current_contact_pubkey:
-													display = pseudo_name
-													break
 										tag = 'message_received'
 									self.text_widget.insert(tk.END, f"[{time_str}] {display}: ", "sender_name")
 									self.text_widget.insert(tk.END, message.strip(), tag)
