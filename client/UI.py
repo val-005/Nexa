@@ -2,9 +2,8 @@ import asyncio, websockets, threading, ast, uuid, requests, pyperclip, random, s
 from tkinter import ttk, scrolledtext, messagebox, StringVar
 from ecies import encrypt, decrypt
 from ecies.utils import generate_eth_key
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image, ImageTk
-from appdirs import user_data_dir
 
 if getattr(sys, 'frozen', False):
     SCRIPT_DIR = sys._MEIPASS
@@ -804,10 +803,22 @@ class NexaInterface(tk.Tk):
 		self.seen_db = sqlite3.connect(os.path.join(DATA_DIR, "seen_messages.db"), check_same_thread=False)
 
 		self.create_widgets()
-		self.load_message_history()			# Charge l'historique des messages précédents
-		self.load_contacts()				# Charge les contacts
+		self.delete_old_messages()  # Suppression des anciens messages au bout d'une semaine
+		self.load_message_history()  # Charge l'historique des messages précédents
+		self.load_contacts()  # Charge les contacts
 		self.after(100, self.check_input_needed)
 		self.setup_nodes_detection()
+
+	def delete_old_messages(self):
+		'''
+		Supprime les messages datant de plus d'une semaine dans messagesUI.db
+		'''
+		try:
+			one_week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+			self.msg_cursor.execute("DELETE FROM message WHERE timestamp < ?", (one_week_ago,))
+			self.msg_db.commit()
+		except Exception as e:
+			messagebox.showerror("Erreur", f"Erreur lors du nettoyage des anciens messages. ({str(e)})", file=sys.stdout)
 
 	def center_window(self):
 		self.update_idletasks()
@@ -1081,6 +1092,7 @@ class NexaInterface(tk.Tk):
 		'''
 		Charge l'historique des messages stockés dans messagesUI.db et les affiche.
 		'''
+		self.delete_old_messages()  # Nettoyage avant chargement
 		try:
 			self.msg_cursor.execute("SELECT sender, \"to\", message, timestamp FROM message ORDER BY id")
 			rows = self.msg_cursor.fetchall()
@@ -1268,6 +1280,7 @@ class NexaInterface(tk.Tk):
 		self.msg_entry.focus_set()
 
 	def load_message_history_for_contact(self, contact_pseudo, contact_pubkey=None):
+		self.delete_old_messages()  # Nettoyage avant chargement
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
 		my_pseudo = self.pseudo.get().strip()
