@@ -1,4 +1,5 @@
 /bootstrap/db.sqlite
+*.db.DS_Store
 node_modules/
 client/build/
 settings.ini

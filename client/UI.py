@@ -1100,7 +1100,6 @@ class NexaInterface(tk.Tk):
 			sender = "Toi"
 		if to is None:
 			to = getattr(self, 'current_contact_pubkey', None)
-		# Convert tkinter StringVar to raw string for SQLite
 		if isinstance(to, StringVar):
 			to = to.get()
 		try:
@@ -1574,12 +1573,15 @@ class NexaInterface(tk.Tk):
 			self.after(100, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
 			self.message_to_send.set("")
 			return
-		if message == "/reconnect":
+		if message == "/reconnect":					# Affiche la page de reconnexion
 			self._reconnecting = True
 			self.disconnect_and_reset()
+			# Affiche la page de connexion comme au lancement
+			self.show_login_interface()
 			self.message_to_send.set("")
 			return
-		if message == "/clear":
+		
+		if message == "/clear":						# Supprime la conversation du contact
 			if not getattr(self, 'current_contact_pubkey', None):
 				return
 			contact_pubkey = str(self.current_contact_pubkey).strip()
@@ -1600,7 +1602,8 @@ class NexaInterface(tk.Tk):
 				show_error(f"Erreur lors de la suppression de l'historique. ({e})")
 			self.message_to_send.set("")
 			return
-		if message == "/clear all":
+		
+		if message == "/clear all":						# Supprime toutes les conversations
 			try:
 				self.msg_cursor.execute("DELETE FROM message")
 				self.msg_db.commit()
@@ -1619,7 +1622,6 @@ class NexaInterface(tk.Tk):
 			self.message_to_send.set("")
 			return
 		
-		# Vérification de la longueur du message (sans compter les espaces)
 		message_no_spaces = message.replace(" ", "")
 		if len(message_no_spaces) > 10000:
 			show_error("Le message est trop long. La limite est de 10000 caractères (espaces non compris).")
@@ -1641,9 +1643,8 @@ class NexaInterface(tk.Tk):
 
 	def disconnect_and_reset(self):
 		"""
-		Déconnecte le client et réinitialise l'interface
+		Déconnecte le client et réinitialise l'interface.
 		"""
-		# Arrête le client proprement
 		if self.client_wrapper:
 			self.client_wrapper.stop_client()
 			
