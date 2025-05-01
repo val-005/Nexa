@@ -34,18 +34,26 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
-        run: |
-          cd client
-          pyinstaller UI.spec --noconfirm
-
       - name: Install Rosetta
         if: matrix.os == 'macos-latest'
         run: |
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license
 
+      - name: Cache pip for Rosetta venv
+        if: matrix.os == 'macos-latest'
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: macos-x86-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Build with PyInstaller
+        run: |
+          cd client
+          pyinstaller UI.spec --noconfirm
+
       - name: Build universal macOS app
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
           cd client
 
@@ -54,7 +62,7 @@ jobs:
 
           # Set up Python x86_64 via Rosetta
           arch -x86_64 /usr/bin/python3 -m venv venv_x86
-          source venv_x86/bin/activate
+          . venv_x86/bin/activate
           arch -x86_64 pip install -r ../requirements.txt
           arch -x86_64 pip install pyinstaller
           arch -x86_64 pyinstaller UI.spec --distpath dist_x86_64

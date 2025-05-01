@@ -8,7 +8,6 @@ if sys.platform == 'darwin':
 elif sys.platform == 'win32':
     datas.append(('NexaIcon.ico', '.'))
     datas.append(('NexaIcon.png', '.'))
-    datas.append(('message.db', '.'))
     datas.append(('settings.ini', '.'))
 else:
     datas.append(('NexaIcon.png', '.'))
