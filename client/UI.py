@@ -545,26 +545,26 @@ class MessageRedirect:
 					parts = string.split(": ", 1)
 					if len(parts) >= 2:
 						sender, message = parts[0], parts[1].strip()
-						if sender.strip().lower() in ("toi", "vous"):
-							display_sender = "Toi"
-						else:
-							display_sender = sender
+
+						display_sender = sender
+						to_pubkey = None
 
 						if hasattr(parent, 'current_contact_pubkey') and hasattr(parent, 'contacts'):
-							my_pubkey = getattr(parent, 'key_var', None)
-							if my_pubkey:
-								my_pubkey = my_pubkey.get().strip()
+							to_pubkey = getattr(parent, 'key_var', None)
 							contact_pseudo = None
 							for p, pk in parent.contacts:
 								if pk == parent.current_contact_pubkey:
 									contact_pseudo = p
 									break
 
-							if parent.current_contact_pubkey == my_pubkey and sender != "Toi" and contact_pseudo:
+							if sender.strip().lower() not in ("toi", "vous") and contact_pseudo:
 								display_sender = contact_pseudo
+							elif sender.strip().lower() in ("toi", "vous"):
+								display_sender = "Toi"
+								
 							timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 						if self.save_message_callback:
-							self.save_message_callback(display_sender, message, timestamp)
+							self.save_message_callback(display_sender, message, timestamp, to=to_pubkey)
 				except Exception as e:
 					pass
 			self.queue.put(("message", string))
@@ -596,42 +596,46 @@ class MessageRedirect:
 									sender, message = parts[0], parts[1]
 									time_str = datetime.now().strftime("%H:%M")
 
+									parent = self.text_widget.master
+									while parent and not hasattr(parent, 'current_contact_pubkey'):
+										parent = getattr(parent, 'master', None)
+
+									display = sender
+									tag = 'message_received'
+
 									if sender.strip().lower() in ("toi", "vous"):
 										display = 'Toi'
 										tag = 'message_sent'
 									else:
-										display = sender
-										tag = 'message_received'
+										# Si un contact est sélectionné, utiliser son pseudo pour l'affichage # MODIFIED
+										if parent and hasattr(parent, 'current_contact_pubkey') and parent.current_contact_pubkey and hasattr(parent, 'contacts'): # MODIFIED
+											contact_pseudo = None # MODIFIED
+											for p, pk in parent.contacts: # MODIFIED
+												if pk == parent.current_contact_pubkey: # MODIFIED
+													contact_pseudo = p # MODIFIED
+													break # MODIFIED
+											if contact_pseudo: # MODIFIED
+												display = contact_pseudo # MODIFIED
+											# Si pas de pseudo trouvé (ne devrait pas arriver), on garde le 'sender' original comme fallback # MODIFIED
+										# Le tag reste 'message_received' # MODIFIED
 
-									parent = self.text_widget.master
-									while parent and not hasattr(parent, 'current_contact_pubkey'):
-										parent = getattr(parent, 'master', None)
-									if parent and hasattr(parent, 'current_contact_pubkey') and hasattr(parent, 'contacts'):
-										my_pubkey = getattr(parent, 'key_var', None)
-										if my_pubkey:
-											my_pubkey = my_pubkey.get().strip()
-										contact_pseudo = None
-										for p, pk in parent.contacts:
-											if pk == parent.current_contact_pubkey:
-												contact_pseudo = p
-												break
-										if parent.current_contact_pubkey == my_pubkey and sender != "Toi" and contact_pseudo:
-											display = contact_pseudo
-											tag = 'message_received'
 									self.text_widget.insert(tk.END, f"[{time_str}] {display}: ", "sender_name")
 									self.text_widget.insert(tk.END, message.strip(), tag)
 									self.text_widget.insert(tk.END, "\n", "")
+
 							except Exception as e:
-								self.text_widget.insert(tk.END, string)
+								self.text_widget.insert(tk.END, string + "\n") # ADDED
 						else:
-							if not ("erreur" in string.lower() or "error" in string.lower()):
-								string = string.strip()
+							if not ("erreur" in string.lower() or "error" in string.lower()): # MODIFIED
+								string = string.strip() # MODIFIED
 								if string:
-									self.text_widget.insert(tk.END, string, "system_message")
+									self.text_widget.insert(tk.END, string, "system_message") # MODIFIED
 									self.text_widget.insert(tk.END, "\n", "")
+
 						self.text_widget.config(state=tk.DISABLED)
 						self.text_widget.see(tk.END)
 					self.queue.task_done()
+
 			except queue.Empty:
 				pass
 			time.sleep(0.1)
@@ -1096,6 +1100,9 @@ class NexaInterface(tk.Tk):
 			sender = "Toi"
 		if to is None:
 			to = getattr(self, 'current_contact_pubkey', None)
+		# Convert tkinter StringVar to raw string for SQLite
+		if isinstance(to, StringVar):
+			to = to.get()
 		try:
 			self.msg_cursor.execute("SELECT 1 FROM message WHERE sender=? AND \"to\"=? AND message=? AND timestamp=?", (sender, to, message, timestamp))
 			if self.msg_cursor.fetchone():
