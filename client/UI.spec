@@ -3,14 +3,13 @@ import sys
 
 datas = []
 if sys.platform == 'darwin':
-    datas.append(('NexaIcon.icns', '.'))
-    datas.append(('NexaIcon.png', '.'))
+    datas.append(('Nexa.icns', '.'))
+    datas.append(('Nexa.png', '.'))
 elif sys.platform == 'win32':
-    datas.append(('NexaIcon.ico', '.'))
-    datas.append(('NexaIcon.png', '.'))
-    datas.append(('settings.ini', '.'))
+    datas.append(('Nexa.ico', '.'))
+    datas.append(('Nexa.png', '.'))
 else:
-    datas.append(('NexaIcon.png', '.'))
+    datas.append(('Nexa.png', '.'))
 
 a = Analysis(
     ['UI.py'],
@@ -52,14 +51,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['NexaIcon.icns'] if sys.platform == 'darwin' else
-         ['NexaIcon.ico'] if sys.platform == 'win32' else None,
+    icon=['Nexa.icns'] if sys.platform == 'darwin' else
+         ['Nexa.ico'] if sys.platform == 'win32' else None,
 )
 
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
         name='NexaChat.app',
-        icon='NexaIcon.icns',
+        icon='Nexa.icns',
         bundle_identifier=None,
     )
