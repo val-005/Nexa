@@ -607,29 +607,29 @@ class MessageRedirect:
 										display = 'Toi'
 										tag = 'message_sent'
 									else:
-										# Si un contact est sélectionné, utiliser son pseudo pour l'affichage # MODIFIED
-										if parent and hasattr(parent, 'current_contact_pubkey') and parent.current_contact_pubkey and hasattr(parent, 'contacts'): # MODIFIED
-											contact_pseudo = None # MODIFIED
-											for p, pk in parent.contacts: # MODIFIED
-												if pk == parent.current_contact_pubkey: # MODIFIED
-													contact_pseudo = p # MODIFIED
-													break # MODIFIED
-											if contact_pseudo: # MODIFIED
-												display = contact_pseudo # MODIFIED
-											# Si pas de pseudo trouvé (ne devrait pas arriver), on garde le 'sender' original comme fallback # MODIFIED
-										# Le tag reste 'message_received' # MODIFIED
+										# Si un contact est sélectionné, utiliser son pseudo pour l'affichage
+										if parent and hasattr(parent, 'current_contact_pubkey') and parent.current_contact_pubkey and hasattr(parent, 'contacts'):
+											contact_pseudo = None
+											for p, pk in parent.contacts:
+												if pk == parent.current_contact_pubkey:
+													contact_pseudo = p
+													break
+											if contact_pseudo:
+												display = contact_pseudo
+											# Si pas de pseudo trouvé (ne devrait pas arriver), on garde le 'sender' original comme fallback
+										# Le tag reste 'message_received'
 
 									self.text_widget.insert(tk.END, f"[{time_str}] {display}: ", "sender_name")
 									self.text_widget.insert(tk.END, message.strip(), tag)
 									self.text_widget.insert(tk.END, "\n", "")
 
 							except Exception as e:
-								self.text_widget.insert(tk.END, string + "\n") # ADDED
+								self.text_widget.insert(tk.END, string + "\n")
 						else:
-							if not ("erreur" in string.lower() or "error" in string.lower()): # MODIFIED
-								string = string.strip() # MODIFIED
+							if not ("erreur" in string.lower() or "error" in string.lower()):
+								string = string.strip()
 								if string:
-									self.text_widget.insert(tk.END, string, "system_message") # MODIFIED
+									self.text_widget.insert(tk.END, string, "system_message")
 									self.text_widget.insert(tk.END, "\n", "")
 
 						self.text_widget.config(state=tk.DISABLED)
@@ -789,10 +789,18 @@ class NexaInterface(tk.Tk):
 
 		self.create_widgets()
 		self.delete_old_messages()  # Suppression des anciens messages au bout d'une semaine
-		self.load_message_history()  # Charge l'historique des messages précédents
+		#self.load_message_history()  # Charge l'historique des messages précédents
 		self.load_contacts()  # Charge les contacts
 		self.after(100, self.check_input_needed)
 		self.setup_nodes_detection()
+		self.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
+		self.focus_set()
+		
+		for child in self.login_frame.winfo_children():
+			for subchild in getattr(child, 'winfo_children', lambda: [])():
+				if isinstance(subchild, ttk.Entry):
+					subchild.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
+
 
 	def delete_old_messages(self):
 		'''
@@ -1378,6 +1386,8 @@ class NexaInterface(tk.Tk):
 		'''
 		Affiche l'interface de chat.
 		'''
+		# Unbind Enter so it no longer triggers connect
+		self.unbind("<Return>")
 		self.login_frame.pack_forget()
 		self.chat_frame.pack(fill=tk.BOTH, expand=True)
 		self.connected = True
@@ -1389,7 +1399,6 @@ class NexaInterface(tk.Tk):
 		self.msg_entry.focus_set()
 		# Cache la zone d'envoi de message tant qu'aucun contact n'est sélectionné
 		self.msg_entry.master.pack_forget()
-		# Ne charge pas l'historique ici
 
 	def show_login_interface(self):
 		'''
@@ -1398,13 +1407,20 @@ class NexaInterface(tk.Tk):
 		self.chat_frame.pack_forget()
 		self.login_frame.pack(fill=tk.BOTH, expand=True)
 		self.connected = False
-		self.connect_button.config(state=tk.NORMAL)
-		# Ajout du binding et focus sur le champ pseudo
+
+		if available_nodes: # Vérifier si des noeuds sont disponibles
+			self.connect_button.config(state=tk.NORMAL)
+		else:
+			self.connect_button.config(state=tk.DISABLED)
+	
+		self.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
+		self.focus_set()
+
 		for child in self.login_frame.winfo_children():
-			for subchild in child.winfo_children():
+			for subchild in getattr(child, 'winfo_children', lambda: [])():
 				if isinstance(subchild, ttk.Entry):
-					subchild.bind("<Return>", lambda event: self.connect() if self.connect_button['state'] != tk.DISABLED else None)
-					subchild.focus_set()
+					subchild.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
+
 
 	def mock_input(self, prompt=""):
 		'''
@@ -1484,9 +1500,6 @@ class NexaInterface(tk.Tk):
 		'''
 		Gère l'envoi des messages.
 		'''
-		if not self.connected or not hasattr(self, 'client') or not self.client:
-			show_error("Vous n'êtes pas connecté.")
-			return
 		message = self.message_to_send.get().strip()
 		if not message:
 			return
@@ -1576,9 +1589,11 @@ class NexaInterface(tk.Tk):
 		if message == "/reconnect":					# Affiche la page de reconnexion
 			self._reconnecting = True
 			self.disconnect_and_reset()
-			# Affiche la page de connexion comme au lancement
 			self.show_login_interface()
 			self.message_to_send.set("")
+			
+			self.login_frame.pack_configure(pady=(80, 0))
+			self.connect_button.bind("<Return>", lambda *args: self.connect())
 			return
 		
 		if message == "/clear":						# Supprime la conversation du contact
