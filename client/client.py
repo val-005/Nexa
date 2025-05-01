@@ -176,7 +176,7 @@ class Client:
 				registration_msg = f"register;client;{pseudo};{self.pubKey}"
 				await websocket.send(registration_msg)
 				
-				print("\n=========================={ Connecté au serveur }============================")
+				print("\n=========================={ Connecté au réseau }============================")
 				print(f"\nTa clé publique : {self.pubKey}")
 
 				def list_contacts():
