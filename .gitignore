@@ -7,7 +7,8 @@ todoList.txt
 buildApp.bat
 client/dist/
 privkey.key
+*.db
 .DS_Store
 .venv/
 venv/
-*.db
+*.db.DS_Store
