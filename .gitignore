@@ -9,4 +9,4 @@ privkey.key
 .DS_Store
 .venv/
 venv/
-*.db
+*.db.DS_Store
