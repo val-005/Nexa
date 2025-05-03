@@ -2,17 +2,22 @@ import os, sys, threading, time, asyncio, random, sqlite3, configparser, re, que
 from tkinter import ttk, scrolledtext, messagebox, StringVar
 from datetime import datetime, timedelta
 from ecies import encrypt, decrypt
-from ecies.utils import generate_eth_key
+try:
+	from ecies.utils import generate_eth_key
+except ModuleNotFoundError:
+	root = tk.Tk(); root.withdraw()
+	messagebox.showerror("Dépendance manquante", "Le module 'eth_keys' n'est pas installé.\nInstallez-le avec : pip install eth-keys")
+	exit(1)
 from PIL import Image, ImageTk
 
 if getattr(sys, 'frozen', False):
-    SCRIPT_DIR = sys._MEIPASS
+	SCRIPT_DIR = sys._MEIPASS
 else:
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+	SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Définir le dossier des données (AppData\Roaming\NexaChat)
+# Définir le dossier des données (AppData\Roaming\Nexa)
 appdata = os.getenv('APPDATA') or os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming')
-DATA_DIR = os.path.join(appdata, 'NexaChat')
+DATA_DIR = os.path.join(appdata, 'Nexa')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Chemin pour lecture et écriture
@@ -38,42 +43,42 @@ stop_async_getnodes = False
 
 # Fonction utilitaire pour assombrir une couleur hexadécimale
 def darken(hex_color, factor=0.8):
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
+	r = int(hex_color[1:3], 16)
+	g = int(hex_color[3:5], 16)
+	b = int(hex_color[5:7], 16)
+	return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
 
 # Fonction calculant la luminosité d'une couleur hexadécimale
 def luminosite(hex_color):
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+	r = int(hex_color[1:3], 16)
+	g = int(hex_color[3:5], 16)
+	b = int(hex_color[5:7], 16)
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 # Fonction utilitaire pour afficher les erreurs de façon uniforme
 def show_error(message, **kwargs):
-    messagebox.showerror("Erreur", message, **kwargs)
+	messagebox.showerror("Erreur", message, **kwargs)
 
 # Choix de couleur de base et alias pour éviter doublons
 base_colors = {
-    'dark grey': ('#424242', '#212121'),		'dark blue': ('#1565c0', '#0d47a1'),
-    'light green': ('#7ED957', '#388E3C'),		'light blue': ('#339CFF', '#1976D2'),
-    'purple': ('#8e24aa', '#512da8'),			'red': ('#D50000', '#B71C1C'),
-    'yellow': ('#FFEB3B', '#FBC02D'),			'green': ('#388E3C', '#1B5E20'),
-    'pink': ('#FF69B4', '#C2185B'),				'black': ('#212121', '#000000'),
-    'blue': ('#1976d2', '#0d47a1'),				'orange': ('#FF9800', '#F57C00'),
+	'dark grey': ('#424242', '#212121'),		'dark blue': ('#1565c0', '#0d47a1'),
+	'light green': ('#7ED957', '#388E3C'),		'light blue': ('#339CFF', '#1976D2'),
+	'purple': ('#8e24aa', '#512da8'),			'red': ('#D50000', '#B71C1C'),
+	'yellow': ('#FFEB3B', '#FBC02D'),			'green': ('#388E3C', '#1B5E20'),
+	'pink': ('#FF69B4', '#C2185B'),				'black': ('#212121', '#000000'),
+	'blue': ('#1976d2', '#0d47a1'),				'orange': ('#FF9800', '#F57C00'),
 }
 COLOR_CHOICES = dict(base_colors)
 aliases = {
-    'gris foncé': 'dark grey',				'bleu foncé': 'dark blue',
-    'vert clair': 'light green',			'bleu clair': 'light blue',
+	'gris foncé': 'dark grey',				'bleu foncé': 'dark blue',
+	'vert clair': 'light green',			'bleu clair': 'light blue',
 	'bleu ciel': 'light blue',				'reset': 'light blue',
-    'violet': 'purple', 'rouge':			'red', 'jaune': 'yellow',
-    'vert': 'green',						'rose': 'pink',
+	'violet': 'purple', 'rouge':			'red', 'jaune': 'yellow',
+	'vert': 'green',						'rose': 'pink',
 	'noir': 'black', 						'bleu': 'blue',
 }
 for alias_name, ref in aliases.items():
-    COLOR_CHOICES[alias_name] = base_colors[ref]
+	COLOR_CHOICES[alias_name] = base_colors[ref]
 
 def parse_color_input(color_input):
 	"""
@@ -99,31 +104,31 @@ def parse_color_input(color_input):
 	return None
 
 def load_color_settings():
-    config = configparser.ConfigParser()
+	config = configparser.ConfigParser()
 
-    if os.path.exists(SETTINGS_USER_PATH):
-        config.read(SETTINGS_USER_PATH)
-    elif os.path.exists(SETTINGS_BUNDLE_PATH):
-        config.read(SETTINGS_BUNDLE_PATH)
+	if os.path.exists(SETTINGS_USER_PATH):
+		config.read(SETTINGS_USER_PATH)
+	elif os.path.exists(SETTINGS_BUNDLE_PATH):
+		config.read(SETTINGS_BUNDLE_PATH)
 
-        os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
-        with open(SETTINGS_USER_PATH, 'w') as configfile:
-            config.write(configfile)
-    else:
-        config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
-        os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
-        with open(SETTINGS_USER_PATH, 'w') as configfile:
-            config.write(configfile)
-    if 'Colors' not in config:
-        config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
-    return config['Colors'].get('primary', '#339CFF'), config['Colors'].get('secondary', '#1976D2')
+		os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
+		with open(SETTINGS_USER_PATH, 'w') as configfile:
+			config.write(configfile)
+	else:
+		config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
+		os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
+		with open(SETTINGS_USER_PATH, 'w') as configfile:
+			config.write(configfile)
+	if 'Colors' not in config:
+		config['Colors'] = {'primary': '#339CFF', 'secondary': '#1976D2'}
+	return config['Colors'].get('primary', '#339CFF'), config['Colors'].get('secondary', '#1976D2')
 
 def save_color_settings(primary, secondary):
-    config = configparser.ConfigParser()
-    config['Colors'] = {'primary': primary, 'secondary': secondary}
-    os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
-    with open(SETTINGS_USER_PATH, 'w') as configfile:
-        config.write(configfile)
+	config = configparser.ConfigParser()
+	config['Colors'] = {'primary': primary, 'secondary': secondary}
+	os.makedirs(os.path.dirname(SETTINGS_USER_PATH), exist_ok=True)
+	with open(SETTINGS_USER_PATH, 'w') as configfile:
+		config.write(configfile)
 
 def signal_handler(sig, frame):					# sig, frame inutilisées mais nécessaires
 	'''
@@ -144,7 +149,7 @@ def get_nodes():
 	Récupère la liste des noeuds sur le bootstrap.
 	'''
 	try:
-		url = "https://bootstrap.nexachat.tech/upNodes"
+		url = "https://bootstrap.Nexachat.tech/upNodes"
 		response = requests.get(url)
 		response.raise_for_status()
 		nodes = response.json()
@@ -171,42 +176,33 @@ def async_getnodes(interval=60):
 class Client:
 	def __init__(self, host: str, port: int = 0):
 		'''
-        Initialise le client, et stocke dans ses attributs :
-        - le port du noeud auquel on veut se connecter
-        - l'ip du noeud auquel on veut se connecter.
+		Initialise le client, et stocke dans ses attributs :
+		- le port du noeud auquel on veut se connecter
+		- l'ip du noeud auquel on veut se connecter.
 		Stocke la clé publique et la clé privée de l'utilisateur dans le fichier privkey.key.
-        '''
+		'''
 		self.host = host
 		self.port = port
 		
 		privkey_path = os.path.join(DATA_DIR, "privkey.key")			# Chemin clé publique et privée
-		# Génère les clés
-		try:
-			with open(privkey_path, "r") as f:
-				content = f.read().strip()
-				if not content:
-					self.keys = generate_eth_key()
-					self.privKey = self.keys.to_hex()
-					self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-					with open(privkey_path, "w") as f2:
-						f2.write(self.privKey + "\n" + self.pubKey)
-				else:
-					lines = content.splitlines()
-					if len(lines) == 2:
-						self.privKey = lines[0]
-						self.pubKey = lines[1]
-					else:
-						self.keys = generate_eth_key()
-						self.privKey = self.keys.to_hex()
-						self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
-						with open(privkey_path, "w") as f2:
-							f2.write(self.privKey + "\n" + self.pubKey)
-		except FileNotFoundError:
+		# Génère ou lit la clé privée/publique
+		if not os.path.exists(privkey_path): 		# Si pas de fichier
 			self.keys = generate_eth_key()
 			self.privKey = self.keys.to_hex()
 			self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
 			with open(privkey_path, "w") as f:
 				f.write(self.privKey + "\n" + self.pubKey)
+		else:										# Si fichier existe
+			with open(privkey_path, "r") as f:
+				lines = [l.strip() for l in f.read().splitlines() if l.strip()]
+			if len(lines) == 2:
+				self.privKey, self.pubKey = lines
+			else:									# Si mauvais format
+				self.keys = generate_eth_key()
+				self.privKey = self.keys.to_hex()
+				self.pubKey = self.keys.public_key.to_compressed_bytes().hex()
+				with open(privkey_path, "w") as f:
+					f.write(self.privKey + "\n" + self.pubKey)
 		
 		self.seen_messages = set()
 		self.seen_db = sqlite3.connect(os.path.join(DATA_DIR, "seen_messages.db"), check_same_thread=False)
@@ -240,7 +236,7 @@ class Client:
 	@staticmethod
 	def verify_key(key):
 		'''
-		Vérifie si une clé publique est au bon format hexadécimal compressé (66 hex).
+		Vérifie si une clé publique est au bon format hexadécimale compressé (66 hex).
 		'''
 		if isinstance(key, str) and key.strip() and len(key) == 66:
 			try:
@@ -327,9 +323,9 @@ class Client:
 
 	async def connect_and_send(self):
 		'''
-        Etablit une connection websocket avec le noeud et envoie les messages.
-        Chiffre les messages avant de les envoyer.
-        '''
+		Etablit une connection websocket avec le noeud et envoie les messages.
+		Chiffre les messages avant de les envoyer.
+		'''
 		host = self.host
 		port = self.port
 		if host == "auto" and available_nodes:
@@ -450,74 +446,74 @@ class Client:
 			self.loop.close()
 
 class WrapperClient:
-    def __init__(self):
-        self.client = None
-        self.client_thread = None
-        self.quitting = False
+	def __init__(self):
+		self.client = None
+		self.client_thread = None
+		self.quitting = False
 
-    def start_client(self, host="auto", port=9102):
-        if self.client_thread and self.client_thread.is_alive():
-            return False
-            
-        self.client = Client(host, port)
-        self.quitting = False
-        self.client_thread = threading.Thread(target=self._run_client)
-        self.client_thread.daemon = True
-        self.client_thread.start()
-        return True
-        
-    def _run_client(self):
-        try:
-            self.client.start()
-        except Exception as e:
-            if "Event loop stopped before Future completed" not in str(e):
-                show_error(f"Erreur dans le client. ({e})")
-        finally:
-            self.client = None
-        
-    def stop_client(self):
-        if not self.client:
-            return
-            
-        self.quitting = True
-        if self.client:
-            self.client.quitting = True
-            
-        # Ferme la websocket et annuler toutes les tâches en cours ou en attente
-        try:
-            if hasattr(self.client, 'websocket') and self.client.websocket:
-                loop = self.client.loop
-                if loop and loop.is_running():
-                    for task in asyncio.all_tasks(loop):
-                        task.cancel()
-                    coro = self.client.websocket.close()
-                    future = asyncio.run_coroutine_threadsafe(coro, loop)
-                    try:
-                        future.result(timeout=1.0)			# Attend la fermeture avec timeout
-                    except (asyncio.TimeoutError, concurrent.futures.TimeoutError, Exception):
-                        pass
-        except Exception as e:
-            pass
-            
-        # Attend que le thread du client se termine
-        max_wait = 2.0  # secondes
-        start_time = time.time()
-        while self.client_thread and self.client_thread.is_alive() and time.time() - start_time < max_wait:
-            time.sleep(0.1)
+	def start_client(self, host="auto", port=9102):
+		if self.client_thread and self.client_thread.is_alive():
+			return False
+			
+		self.client = Client(host, port)
+		self.quitting = False
+		self.client_thread = threading.Thread(target=self._run_client)
+		self.client_thread.daemon = True
+		self.client_thread.start()
+		return True
+		
+	def _run_client(self):
+		try:
+			self.client.start()
+		except Exception as e:
+			if "Event loop stopped before Future completed" not in str(e):
+				show_error(f"Erreur dans le client. ({e})")
+		finally:
+			self.client = None
+		
+	def stop_client(self):
+		if not self.client:
+			return
+			
+		self.quitting = True
+		if self.client:
+			self.client.quitting = True
+			
+		# Ferme la websocket et annuler toutes les tâches en cours ou en attente
+		try:
+			if hasattr(self.client, 'websocket') and self.client.websocket:
+				loop = self.client.loop
+				if loop and loop.is_running():
+					for task in asyncio.all_tasks(loop):
+						task.cancel()
+					coro = self.client.websocket.close()
+					future = asyncio.run_coroutine_threadsafe(coro, loop)
+					try:
+						future.result(timeout=1.0)			# Attend la fermeture avec timeout
+					except (asyncio.TimeoutError, concurrent.futures.TimeoutError, Exception):
+						pass
+		except Exception as e:
+			pass
+			
+		# Attend que le thread du client se termine
+		max_wait = 2.0  # secondes
+		start_time = time.time()
+		while self.client_thread and self.client_thread.is_alive() and time.time() - start_time < max_wait:
+			time.sleep(0.1)
 
-        if self.client and hasattr(self.client, 'loop') and self.client.loop:
-            try:
-                loop = self.client.loop
-                if loop.is_running():
-                    for task in asyncio.all_tasks(loop):
-                        if not task.done():
-                            task.cancel()
-                    loop.call_soon_threadsafe(loop.stop)
-            except Exception:
-                pass
-                
-        # Nettoyer le client
-        self.client = None
+		if self.client and hasattr(self.client, 'loop') and self.client.loop:
+			try:
+				loop = self.client.loop
+				if loop.is_running():
+					for task in asyncio.all_tasks(loop):
+						if not task.done():
+							task.cancel()
+					loop.call_soon_threadsafe(loop.stop)
+			except Exception:
+				pass
+				
+		# Nettoyer le client
+		self.client = None
 
 # Interface graphique
 class MessageRedirect:
@@ -547,22 +543,22 @@ class MessageRedirect:
 						sender, message = parts[0], parts[1].strip()
 
 						display_sender = sender
-						to_pubkey = None
-
-						if hasattr(parent, 'current_contact_pubkey') and hasattr(parent, 'contacts'):
-							to_pubkey = getattr(parent, 'key_var', None)
-							contact_pseudo = None
+						to_pubkey = getattr(parent, 'current_contact_pubkey', None)
+	
+						# determine the contact’s pseudo for the current_contact_pubkey
+						contact_pseudo = None
+						if parent and hasattr(parent, 'contacts'):
 							for p, pk in parent.contacts:
-								if pk == parent.current_contact_pubkey:
+								if pk == to_pubkey:
 									contact_pseudo = p
 									break
-
-							if sender.strip().lower() not in ("toi", "vous") and contact_pseudo:
-								display_sender = contact_pseudo
-							elif sender.strip().lower() in ("toi", "vous"):
-								display_sender = "Toi"
+	
+						if sender.strip().lower() != "toi" and contact_pseudo:
+							display_sender = contact_pseudo
+						elif sender.strip().lower() == "toi":
+							display_sender = "Toi"
 								
-							timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+						timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 						if self.save_message_callback:
 							self.save_message_callback(display_sender, message, timestamp, to=to_pubkey)
 				except Exception as e:
@@ -603,7 +599,7 @@ class MessageRedirect:
 									display = sender
 									tag = 'message_received'
 
-									if sender.strip().lower() in ("toi", "vous"):
+									if sender.strip().lower() == "toi":
 										display = 'Toi'
 										tag = 'message_sent'
 									else:
@@ -617,7 +613,6 @@ class MessageRedirect:
 											if contact_pseudo:
 												display = contact_pseudo
 											# Si pas de pseudo trouvé (ne devrait pas arriver), on garde le 'sender' original comme fallback
-										# Le tag reste 'message_received'
 
 									self.text_widget.insert(tk.END, f"[{time_str}] {display}: ", "sender_name")
 									self.text_widget.insert(tk.END, message.strip(), tag)
@@ -638,7 +633,7 @@ class MessageRedirect:
 
 			except queue.Empty:
 				pass
-			time.sleep(0.1)
+			time.sleep(0.1)			# Pause pour éviter les surcharges
 
 	def stop(self):
 		self.updating = False
@@ -647,22 +642,16 @@ class NexaInterface(tk.Tk):
 	def __init__(self):
 		super().__init__()
 		self.withdraw()
-		self.title("NexaChat")
-		self.geometry("600x700")			# Taille de la fenêtre (largeur x hauteur)
-		self.minsize(600, 600)				# Taille minimale
-
-		self.center_window()
-		self.deiconify()
+		self.title("Nexa")
 		self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 		self.is_mac = platform.system() == "Darwin"			# Adapte l'interface en fonction de l'OS utilisé
-		
 		if self.is_mac:
 			# Force le mode clair sur macOS
 			self.tk_setPalette(background="#FFFFFF",
-							  foreground="#000000",
-							  activeBackground="#EFEFEF",
-							  activeForeground="#000000")
+							foreground="#000000",
+							activeBackground="#EFEFEF",
+							activeForeground="#000000")
 		
 		self.style = ttk.Style()
 		if self.is_mac:
@@ -690,24 +679,24 @@ class NexaInterface(tk.Tk):
 		self.subtitle_font = (self.default_font, 10)
 		
 		self.style.configure('TLabel', 
-					   background="#FFFFFF",
-					   foreground=self.text_color,
-					   font=self.subtitle_font)
-    		
+					background="#FFFFFF",
+					foreground=self.text_color,
+					font=self.subtitle_font)
+			
 		self.style.configure('Header.TLabel',
-					   font=('Segoe UI', 16, 'bold'),
-					   foreground='white',
-					   background=self.primary_color)
+					font=('Segoe UI', 16, 'bold'),
+					foreground='white',
+					background=self.primary_color)
 		
 		self.style.configure('Header.Subtitle.TLabel',
-					   font=('Segoe UI', 10),
-					   foreground='white',
-					   background=self.primary_color)
+					font=('Segoe UI', 10),
+					foreground='white',
+					background=self.primary_color)
 		
 		self.style.configure('Status.TLabel',
-					   font=('Segoe UI', 10),
-					   foreground=self.text_color,
-					   background=self.primary_color)
+					font=('Segoe UI', 10),
+					foreground=self.text_color,
+					background=self.primary_color)
 		
 		# Configuration des boutons adaptée à macOS
 		if self.is_mac:
@@ -726,20 +715,20 @@ class NexaInterface(tk.Tk):
 					background=[('pressed', self.secondary_color), ('active', self.secondary_color)])
 		
 		self.style.configure('Send.TButton',
-					   	font=('Segoe UI', 12, 'bold'),
+						font=('Segoe UI', 12, 'bold'),
 						background=self.primary_color, 
 						foreground='white',
 						borderwidth=0,
 						padding=8)
 		
 		self.style.map('Send.TButton', 
-					 foreground=[('pressed', 'white'), ('active', 'white')], 
-					 background=[('pressed', self.secondary_color),
-				  				('active', self.secondary_color)])
+					foreground=[('pressed', 'white'), ('active', 'white')], 
+					background=[('pressed', self.secondary_color),
+								('active', self.secondary_color)])
 		
 		self.style.configure('Key.TLabel',
-					   font=('Segoe UI', 9),
-					   background='#EEEEEE')
+					font=('Segoe UI', 9),
+					background='#EEEEEE')
 		
 		self.message_to_send = StringVar()
 		self.recipient_key = StringVar()
@@ -759,6 +748,18 @@ class NexaInterface(tk.Tk):
 					self.iconbitmap(icon_path)
 				except Exception as e:
 					show_error(f"L'icône Nexa.ico n'a pas pu être chargée. ({e})")
+		else:
+			# macOS / Linux : utilise une image (PNG) pour l’icône
+			icon_path = os.path.join(SCRIPT_DIR, "Nexa.png")
+			if os.path.exists(icon_path):
+				try:
+					img = ImageTk.PhotoImage(Image.open(icon_path))
+					# WM iconphoto fonctionne sous macOS et Linux
+					self.tk.call('wm', 'iconphoto', self._w, img)
+					# Conserver la référence pour éviter que le garbage collector ne la supprime
+					self._icon_img = img
+				except Exception as e:
+					show_error(f"L'icône Nexa.png n'a pas pu être chargée. ({e})")
 
 		self.msg_db = sqlite3.connect(os.path.join(DATA_DIR, "messagesUI.db"), check_same_thread=False)
 
@@ -789,18 +790,33 @@ class NexaInterface(tk.Tk):
 
 		self.create_widgets()
 		self.delete_old_messages()  # Suppression des anciens messages au bout d'une semaine
-		#self.load_message_history()  # Charge l'historique des messages précédents
-		self.load_contacts()  # Charge les contacts
+		self.load_contacts()  		# Charge les contacts
 		self.after(100, self.check_input_needed)
 		self.setup_nodes_detection()
+		self.setup_login_page()
+		self.center_window()
+		self.deiconify()
+		
+	def setup_login_page(self):
+		"""Configure la page de connexion (focus, bind, resize, etc)."""
+		self.geometry("600x700")
+		self.minsize(600, 600)
+		self.resizable(False, False)
+		self.chat_frame.pack_forget()
+		self.login_frame.pack(fill=tk.BOTH, expand=True)
+		self.connected = False
+
+		if available_nodes:
+			self.connect_button.config(state=tk.NORMAL)
+		else:
+			self.connect_button.config(state=tk.DISABLED)
+
 		self.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
 		self.focus_set()
-		
 		for child in self.login_frame.winfo_children():
 			for subchild in getattr(child, 'winfo_children', lambda: [])():
 				if isinstance(subchild, ttk.Entry):
 					subchild.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
-
 
 	def delete_old_messages(self):
 		'''
@@ -855,7 +871,12 @@ class NexaInterface(tk.Tk):
 		header_padding.pack(fill=tk.X, padx=15, pady=15)
 
 		# Titre centré
-		ttk.Label(header_padding, text="NexaChat", style='Header.TLabel').pack(anchor=tk.CENTER, expand=True)
+		ttk.Label(
+			header_padding,
+			text="Nexa",
+			style='Header.TLabel',
+			font=(self.default_font, 24, 'bold')
+		).pack(anchor=tk.CENTER, expand=True)
 
 		# Page de connexion
 		self.login_frame = ttk.Frame(main_frame, padding=20)	
@@ -875,14 +896,14 @@ class NexaInterface(tk.Tk):
 		logo_label.pack(pady=(30, 20))
 
 		ttk.Label(self.login_frame,
-					text="Bienvenue sur NexaChat !",
+					text="Bienvenue sur Nexa !",
 					font=(self.default_font, 25, "bold")).pack(pady=(0, 20))
 		
 		# Formulaire de connexion
 		form_frame = ttk.Frame(self.login_frame, padding=10)
 		form_frame.pack(fill=tk.X)
 
-		spacer = ttk.Frame(self.login_frame, height=100)
+		spacer = ttk.Frame(self.login_frame, height=80)
 		spacer.pack(fill=tk.X)
 
 		bottom_frame = ttk.Frame(self.login_frame)
@@ -925,41 +946,40 @@ class NexaInterface(tk.Tk):
 		key_display_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=2)
 
 		self.key_label = ttk.Label(key_display_frame,
-							 textvariable=self.key_var,
-							 style='Key.TLabel',
-							 wraplength=0,
-							 anchor='center',
-							 background='#EEEEEE')
+							textvariable=self.key_var,
+							style='Key.TLabel',
+							wraplength=0,
+							anchor='center',
+							background='#EEEEEE')
 		
 		self.key_label.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=2, padx=5)
 		
 		# Bouton pour copier la clé (à droite du conteneur)
 		if self.is_mac:
 			copy_btn = ttk.Button(key_frame,
-						   text="Copier",
-						   command=self.copy_key,
-						   style='TButton')
+						text="Copier",
+						command=self.copy_key,
+						style='TButton')
 		else:
 			copy_btn = tk.Button(key_frame,
-						   text="Copier",
-						   command=self.copy_key,
-						   bg=self.primary_color,
-						   fg="white",
-						   font=(self.default_font, 9, 'bold'),
-						   relief=tk.RAISED,
-						   borderwidth=0,
-						   padx=8, pady=2,
-						   cursor="hand2")
+						text="Copier",
+						command=self.copy_key,
+						bg=self.primary_color,
+						fg="white",
+						font=(self.default_font, 9, 'bold'),
+						relief=tk.RAISED,
+						borderwidth=0,
+						padx=8, pady=2,
+						cursor="hand2")
 		
 		copy_btn.pack(side=tk.LEFT, padx=5, pady=2)
-		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=2)
 
-		# clear separation: use PanedWindow horizontal
-		paned = tk.PanedWindow(self.chat_frame, orient=tk.HORIZONTAL, sashwidth=6, sashrelief=tk.RAISED)
+		ttk.Separator(self.chat_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=0, pady=(2, 2))
+		
+		paned = tk.PanedWindow(self.chat_frame, orient=tk.HORIZONTAL, sashwidth=2, sashrelief=tk.GROOVE, bg="#F0F0F0", bd=0)
 		paned.pack(fill=tk.BOTH, expand=True)
 
-		# Contacts panel as pane
-		contacts_frame = ttk.Frame(paned, padding=2, width=150, relief=tk.GROOVE, borderwidth=1)
+		contacts_frame = ttk.Frame(paned, padding=2, width=150)
 		contacts_frame.pack(side=tk.LEFT, fill=tk.Y)
 		paned.add(contacts_frame)
 		paned.paneconfigure(contacts_frame, minsize=150)
@@ -973,30 +993,28 @@ class NexaInterface(tk.Tk):
 									relief=tk.RAISED, borderwidth=0, cursor="hand2")
 		contacts_btn.pack(fill=tk.X, pady=(2, 2))
 
-		# menu contextuel sur contacts
 		self.contact_menu = tk.Menu(self, tearoff=0)
 		self.contact_menu.add_command(label="Supprimer", command=self.delete_contact)
-		# Correction : ne pas déselectionner le contact lors de la sélection de texte dans le chat
 		self.contacts_listbox.bind("<ButtonRelease-1>", lambda e: self.on_contact_select())
 		self.contacts_listbox.bind("<Button-3>", self.show_contact_menu)
 
-		 # Chat area as pane
 		chat_area_frame = ttk.Frame(paned)
 		paned.add(chat_area_frame)
 		paned.paneconfigure(chat_area_frame, minsize=300)
 
 		# Zone d'affichage des messages
-		self.chat_text = scrolledtext.ScrolledText(chat_area_frame,
-												wrap=tk.WORD,
-												height=15,
-												font=(self.default_font, 11),
-												bd=1 if self.is_mac else 0,  # Bordure légère sur Mac
-												relief=tk.SUNKEN if self.is_mac else tk.FLAT
-												)
+		self.chat_text_frame = ttk.Frame(chat_area_frame)
+		self.chat_text_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+
+		self.chat_text = scrolledtext.ScrolledText(self.chat_text_frame,
+													wrap=tk.WORD,
+													height=15,
+													font=(self.default_font, 11),
+													bd=1 if self.is_mac else 0,  # Bordure légère sur Mac
+													relief=tk.SUNKEN if self.is_mac else tk.FLAT)
 		self.chat_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 		self.chat_text.config(state=tk.DISABLED)
-		# Empêcher la déselection du contact lors d'un double-clic dans la zone de chat
-		self.chat_text.bind('<Double-Button-1>', lambda e: 'break')
+		self.chat_text.bind('<Double-Button-1>', lambda e: 'break')		# Empêche la déselection du contact lors d'un double-clic dans la zone de chat
 
 		# Configuration des tags pour le formatage du texte
 		self.chat_text.tag_configure("message_sent",
@@ -1004,7 +1022,7 @@ class NexaInterface(tk.Tk):
 									spacing1=0, spacing2=0, spacing3=0,
 									lmargin1=5, lmargin2=5,
 									foreground="black",
-									wrap=tk.WORD)  # Ensure long messages wrap properly
+									wrap=tk.WORD)
 
 		self.chat_text.tag_configure("system_message_center",
 									foreground="#757575",
@@ -1104,7 +1122,7 @@ class NexaInterface(tk.Tk):
 		'''
 		Sauvegarde les messages dans messagesUI.db uniquement s'ils n'existent pas déjà.
 		'''
-		if sender.strip().lower() in ("vous", "toi"):
+		if sender.strip().lower() == "toi":
 			sender = "Toi"
 		if to is None:
 			to = getattr(self, 'current_contact_pubkey', None)
@@ -1131,11 +1149,9 @@ class NexaInterface(tk.Tk):
 			for item in rows:
 				pseudo, _ = item
 				self.contacts_listbox.insert(tk.END, pseudo)
-		# Ajout : si plus de contacts, efface la zone de chat et masque la zone d'envoi
+		# Si aucun contact créé, masque la zone de chat
 		if len(rows) == 0:
-			self.chat_text.config(state=tk.NORMAL)
-			self.chat_text.delete(1.0, tk.END)
-			self.chat_text.config(state=tk.DISABLED)
+			self.chat_text_frame.pack_forget()
 			self.current_contact_pubkey = None
 			self.msg_entry.master.pack_forget()
 
@@ -1174,12 +1190,10 @@ class NexaInterface(tk.Tk):
 		pw, ph = self.winfo_width(), self.winfo_height()
 		x = px + (pw - 270)//2; y = py + (ph - 115)//2
 		dialog.geometry(f"270x115+{x}+{y}")
-		self.after(100, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
-		dialog.minsize(270, 115)									# Taille min de la fenêtre de création de contact
+		dialog.minsize(270, 115)						# Taille min de la fenêtre de création de contact
 		dialog.maxsize(700, 115)
 		content_frame = ttk.Frame(dialog, style='TFrame', padding=10)
 		content_frame.pack(fill=tk.BOTH, expand=True)
-		# permettre aux colonnes de s'étendre
 		content_frame.columnconfigure(1, weight=1)
 		dialog.title("Nouveau contact")
 		icon_path = os.path.join(SCRIPT_DIR, "Nexa.ico")
@@ -1193,7 +1207,7 @@ class NexaInterface(tk.Tk):
 		pseudo_var = StringVar()
 		pseudo_entry = ttk.Entry(content_frame, textvariable=pseudo_var)
 		pseudo_entry.grid(row=0, column=1, padx=5, pady=5, sticky='we')
-		pseudo_entry.focus_set()
+		self.after(100, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), pseudo_entry.focus_set(), dialog.attributes('-topmost', 1)))
 		ttk.Label(content_frame, text="Clé publique :").grid(row=1, column=0, padx=5, pady=5, sticky='w')
 		pubkey_var = StringVar()
 		pubkey_entry = ttk.Entry(content_frame, textvariable=pubkey_var)
@@ -1230,17 +1244,17 @@ class NexaInterface(tk.Tk):
 			ttk.Button(btn_frame, text="Annuler", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 		else:
 			tk.Button(btn_frame, text="Ajouter", command=_on_add,
-					  bg=self.primary_color, fg="white",
-					  font=(self.default_font, 9, 'bold'),
-					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
+					bg=self.primary_color, fg="white",
+					font=(self.default_font, 9, 'bold'),
+					relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
 			tk.Button(btn_frame, text="Annuler", command=dialog.destroy,
-					  bg=self.primary_color, fg="white",
-					  font=(self.default_font, 9, 'bold'),
-					  relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
+					bg=self.primary_color, fg="white",
+					font=(self.default_font, 9, 'bold'),
+					relief=tk.RAISED, borderwidth=0, cursor="hand2").pack(side=tk.LEFT, padx=5)
 		dialog.bind("<Return>", lambda e: _on_add())
 		dialog.bind("<Escape>", lambda e: dialog.destroy())		
 
-		 # S'assure que la fenêtre reste au premier plan si on clique ailleurs
+		# S'assure que la fenêtre reste au premier plan si on clique ailleurs
 		def keep_on_top(event=None):
 			try:
 				dialog.attributes('-topmost', 1)
@@ -1253,31 +1267,36 @@ class NexaInterface(tk.Tk):
 
 	def on_contact_select(self):
 		selection = self.contacts_listbox.curselection()
+		# Masque la zone de chat quand aucun contact n'est sélectionné
 		if not selection:
-			self.chat_text.config(state=tk.NORMAL)
-			self.chat_text.delete(1.0, tk.END)
-			self.chat_text.config(state=tk.DISABLED)
-			self.current_contact_pubkey = None
-			# Cache la zone d'envoi de message
+			self.chat_text_frame.pack_forget()
 			self.msg_entry.master.pack_forget()
+			self.current_contact_pubkey = None
 			return
 		index = selection[0]
 		pseudo, pubkey = self.contacts[index]
 		self.current_contact_pubkey = pubkey
 		self.recipient_key.set(pubkey)
-		# Affiche la zone d'envoi de message
-		self.msg_entry.master.pack(fill=tk.X, side=tk.BOTTOM)
-		# Recharge l'historique à chaque sélection
-		self.load_message_history_for_contact(pseudo, pubkey)
-		# Donne le focus à la zone de saisie du message
-		self.msg_entry.focus_set()
 
+		# Ré-affiche la zone de chat et la barre de défilement
+		self.chat_text_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+		self.msg_entry.master.pack(fill=tk.X, side=tk.BOTTOM)
+		self.load_message_history_for_contact(pseudo, pubkey)	# Recharge l'historique des conversations à chaque sélection
+		self.msg_entry.focus_set()								# Donne le focus à la zone de saisie du message
+	
 	def load_message_history_for_contact(self, contact_pseudo, contact_pubkey=None):
 		self.delete_old_messages()  # Nettoyage avant chargement
 		self.chat_text.config(state=tk.NORMAL)
 		self.chat_text.delete(1.0, tk.END)
 		my_pubkey = self.key_var.get().strip()
-		self.msg_cursor.execute("SELECT sender, \"to\", message, timestamp FROM message WHERE (\"to\"=? OR sender=?) ORDER BY id", (contact_pubkey, contact_pubkey))
+		self.msg_cursor.execute(
+			"SELECT sender, \"to\", message, timestamp "
+			"FROM message "
+			"WHERE (sender=? AND \"to\"=?) "           # incoming: contact→me
+			"OR (sender='Toi' AND \"to\"=?) "    # outgoing: me→contact
+			"ORDER BY id",
+			(contact_pseudo, my_pubkey, contact_pubkey)
+		)
 		rows = self.msg_cursor.fetchall()
 		# Grouper les messages par date
 		messages_by_date = {}
@@ -1289,7 +1308,7 @@ class NexaInterface(tk.Tk):
 			# Affiche la date du jour même si aucun message
 			date_str = datetime.now().strftime("%A %d %B %Y")
 			date_str = date_str[0].upper() + date_str[1:]
-			self.chat_text.insert(tk.END, "\n", "system_message")
+			self.chat_text.insert(tk.END, "", "system_message")
 			self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
 		else:
 			for msg_date in sorted(messages_by_date.keys()):
@@ -1298,7 +1317,7 @@ class NexaInterface(tk.Tk):
 					continue
 				date_str = msg_date.strftime("%A %d %B %Y")
 				date_str = date_str[0].upper() + date_str[1:]
-				self.chat_text.insert(tk.END, "\n", "system_message")
+				self.chat_text.insert(tk.END, "", "system_message")
 				self.chat_text.insert(tk.END, date_str + "\n", "system_message_center")
 				for sender, to, message, timestamp in day_msgs:
 					time_str = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
@@ -1379,14 +1398,13 @@ class NexaInterface(tk.Tk):
 				self.after(0, lambda: self.status.set(f"Erreur : {e}"))
 				self.after(0, lambda: self.connect_button.config(state=tk.NORMAL))
 				self.after(0, lambda e=e: show_error(f"Impossible de se connecter. ({e})"))
-				self.after(0, self.show_login_interface)
+				self.after(0, self.setup_login_page)
 		threading.Thread(target=setup_client, daemon=True).start()
 
 	def show_chat_interface(self):
 		'''
 		Affiche l'interface de chat.
 		'''
-		# Unbind Enter so it no longer triggers connect
 		self.unbind("<Return>")
 		self.login_frame.pack_forget()
 		self.chat_frame.pack(fill=tk.BOTH, expand=True)
@@ -1397,30 +1415,8 @@ class NexaInterface(tk.Tk):
 		self.contacts_listbox.selection_clear(0, tk.END)
 		self.current_contact_pubkey = None
 		self.msg_entry.focus_set()
-		# Cache la zone d'envoi de message tant qu'aucun contact n'est sélectionné
-		self.msg_entry.master.pack_forget()
-
-	def show_login_interface(self):
-		'''
-		Affiche l'interface de connexion.
-		'''
-		self.chat_frame.pack_forget()
-		self.login_frame.pack(fill=tk.BOTH, expand=True)
-		self.connected = False
-
-		if available_nodes: # Vérifier si des noeuds sont disponibles
-			self.connect_button.config(state=tk.NORMAL)
-		else:
-			self.connect_button.config(state=tk.DISABLED)
-	
-		self.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
-		self.focus_set()
-
-		for child in self.login_frame.winfo_children():
-			for subchild in getattr(child, 'winfo_children', lambda: [])():
-				if isinstance(subchild, ttk.Entry):
-					subchild.bind("<Return>", lambda *args: self.connect() if self.connect_button['state'] == tk.NORMAL else None)
-
+		self.msg_entry.master.pack_forget()			# Cache la zone d'envoi de message tant qu'aucun contact n'est sélectionné
+		self.resizable(True, True)					# Réactive la possibilité d'agrandir/réduire la fenêtre
 
 	def mock_input(self, prompt=""):
 		'''
@@ -1438,10 +1434,10 @@ class NexaInterface(tk.Tk):
 			except queue.Empty:
 				pass
 
-			entered_key = self.recipient_key.get().strip()
-			if entered_key:
-				return entered_key
-			return "temp_key"
+				entered_key = self.recipient_key.get().strip()
+				if entered_key:
+					return entered_key
+				return "temp_key"
 		return ""
 
 	def check_input_needed(self):
@@ -1570,17 +1566,17 @@ class NexaInterface(tk.Tk):
 					subprocess.Popen(["xdg-open", DATA_DIR])
 				dialog.destroy()
 			voir_btn = tk.Button(btn_frame, text="Voir", command=open_folder,
-								 bg=self.primary_color, fg="white",
-								 font=(self.default_font, 9, 'bold'),
-								 relief=tk.RAISED, borderwidth=0, cursor="hand2")
+								bg=self.primary_color, fg="white",
+								font=(self.default_font, 9, 'bold'),
+								relief=tk.RAISED, borderwidth=0, cursor="hand2")
 			voir_btn.pack(side=tk.LEFT, padx=5)
 			def copier_et_fermer():
 				pyperclip.copy(DATA_DIR)
 				dialog.destroy()
 			copier_btn = tk.Button(btn_frame, text="Copier", command=copier_et_fermer,
-								   bg=self.primary_color, fg="white",
-								   font=(self.default_font, 9, 'bold'),
-								   relief=tk.RAISED, borderwidth=0, cursor="hand2")
+								bg=self.primary_color, fg="white",
+								font=(self.default_font, 9, 'bold'),
+								relief=tk.RAISED, borderwidth=0, cursor="hand2")
 			copier_btn.pack(side=tk.LEFT, padx=5)
 			dialog.bind("<Escape>", lambda e: dialog.destroy())
 			self.after(100, lambda: (dialog.deiconify(), dialog.lift(), dialog.focus_force(), dialog.attributes('-topmost', 1)))
@@ -1589,7 +1585,7 @@ class NexaInterface(tk.Tk):
 		if message == "/reconnect":					# Affiche la page de reconnexion
 			self._reconnecting = True
 			self.disconnect_and_reset()
-			self.show_login_interface()
+			self.setup_login_page()
 			self.message_to_send.set("")
 			
 			self.login_frame.pack_configure(pady=(80, 0))
@@ -1675,7 +1671,7 @@ class NexaInterface(tk.Tk):
 		self.key_var.set("Non disponible")
 		
 		# Retour à l'interface de login
-		self.show_login_interface()
+		self.setup_login_page()
 		if available_nodes:
 			self.connect_button.config(state=tk.NORMAL)
 		else:
